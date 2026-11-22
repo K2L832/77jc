@@ -1,4 +1,5 @@
-// Build Revision: Kuzo-Casino-v2.1 (Prefix: *)
+
+// Build Revision: Kuzo-Casino-v2.2-Visuals (Prefix: *)
 const {
     Client,
     GatewayIntentBits,
@@ -21,7 +22,7 @@ const zlib = require('zlib');
 const PORT = process.env.PORT || 3001;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Kuzo Casino Operational v2.1!\n');
+    res.end('Kuzo Casino Operational v2.2!\n');
 }).listen(PORT, '0.0.0.0', () => console.log(`Serveur HTTP Kuzo Casino actif sur le port ${PORT}`));
 
 const client = new Client({
@@ -89,9 +90,10 @@ function loadData() {
 
 loadData();
 
-function getUser(userId) {
+function getUser(userId, discordUser = null) {
     if (!db.users[userId]) {
         db.users[userId] = {
+            username: discordUser ? (discordUser.globalName || discordUser.username) : `Joueur_${userId.slice(-4)}`,
             cash: 2500,
             bank: 1000,
             crypto: { BTC: 0, ETH: 0, KZO: 0, SOL: 0 },
@@ -102,6 +104,10 @@ function getUser(userId) {
         saveData();
     }
     const u = db.users[userId];
+    if (discordUser) {
+        u.username = discordUser.globalName || discordUser.username || u.username;
+    }
+    if (!u.username) u.username = `Joueur_${userId.slice(-4)}`;
     if (!u.crypto) u.crypto = { BTC: 0, ETH: 0, KZO: 0, SOL: 0 };
     if (!u.stats) u.stats = { wins: 0, losses: 0, wagered: 0, hacksSuccess: 0 };
     if (!u.cooldowns) u.cooldowns = { work: 0, daily: 0, crime: 0, rob: 0, hack: 0 };
@@ -189,27 +195,24 @@ class BluePngCanvas {
             const ty = y / this.h;
             for (let x = 0; x < this.w; x++) {
                 const tx = x / this.w;
-                // Dégradé bleu nuit vers bleu électrique
-                let r = Math.round(5 + tx * 12 + ty * 6);
-                let g = Math.round(22 + tx * 48 + ty * 35);
-                let b = Math.round(68 + tx * 95 + ty * 55);
+                let r = Math.round(4 + tx * 10 + ty * 6);
+                let g = Math.round(18 + tx * 45 + ty * 32);
+                let b = Math.round(58 + tx * 92 + ty * 50);
 
-                // Halo lumineux en haut à droite
                 const dx = (x - this.w * 0.82) / (this.w * 0.42);
                 const dy = (y - this.h * 0.18) / (this.h * 0.55);
                 const dist = Math.sqrt(dx * dx + dy * dy);
                 if (dist < 1) {
-                    const glow = (1 - dist) * 0.35;
+                    const glow = (1 - dist) * 0.36;
                     r = Math.min(255, Math.round(r + 56 * glow));
                     g = Math.min(255, Math.round(g + 189 * glow));
                     b = Math.min(255, Math.round(b + 248 * glow));
                 }
 
-                // Grille discrète
-                if (x % 36 === 0 || y % 36 === 0) {
-                    r = Math.min(255, r + 10);
-                    g = Math.min(255, g + 25);
-                    b = Math.min(255, b + 40);
+                if (x % 32 === 0 || y % 32 === 0) {
+                    r = Math.min(255, r + 8);
+                    g = Math.min(255, g + 22);
+                    b = Math.min(255, b + 36);
                 }
 
                 this.setPixel(x, y, r, g, b, 255);
@@ -259,8 +262,8 @@ class BluePngCanvas {
         const ihdr = Buffer.alloc(13);
         ihdr.writeUInt32BE(this.w, 0);
         ihdr.writeUInt32BE(this.h, 4);
-        ihdr[8] = 8; // bit depth
-        ihdr[9] = 6; // RGBA
+        ihdr[8] = 8;
+        ihdr[9] = 6;
         ihdr[10] = 0;
         ihdr[11] = 0;
         ihdr[12] = 0;
@@ -275,32 +278,77 @@ class BluePngCanvas {
     }
 }
 
-function createBlueBannerPng(bars = []) {
-    const c = new BluePngCanvas(680, 220);
+function createBlueScenePng(ratios = [0.6, 0.4, 0.8]) {
+    const c = new BluePngCanvas(640, 200);
     c.fillBlueTheme();
-    c.drawRectOutline(14, 14, 652, 192, 3, 56, 189, 248, 220);
-    c.fillRect(36, 36, 180, 6, 56, 189, 248, 255);
+    c.drawRectOutline(12, 12, 616, 176, 3, 56, 189, 248, 220);
 
-    bars.slice(0, 3).forEach((ratio, i) => {
-        const bx = 36 + i * 208;
-        const by = 72;
-        const bw = 190;
-        const bh = 98;
-        c.fillRect(bx, by, bw, bh, 8, 28, 66, 215);
-        c.drawRectOutline(bx, by, bw, bh, 2, 56, 189, 248, 200);
-        const clamped = Math.max(0.08, Math.min(1, ratio));
-        c.fillRect(bx + 12, by + bh - 22, Math.round((bw - 24) * clamped), 10, 56, 189, 248, 255);
+    // Sol / ligne d'horizon bleue
+    c.fillRect(28, 162, 584, 4, 56, 189, 248, 180);
+
+    ratios.slice(0, 3).forEach((ratio, i) => {
+        const bx = 42 + i * 192;
+        const clamped = Math.max(0.15, Math.min(1, ratio));
+        const bh = Math.round(35 + clamped * 85);
+        const by = 162 - bh;
+        const bw = 156;
+
+        c.fillRect(bx, by, bw, bh, 12, 42, 96, 230);
+        c.drawRectOutline(bx, by, bw, bh, 2, 56, 189, 248, 235);
+
+        // Fenêtres lumineuses
+        for (let wy = by + 12; wy < 148; wy += 18) {
+            for (let wx = bx + 14; wx < bx + bw - 22; wx += 26) {
+                c.fillRect(wx, wy, 12, 8, 125, 211, 252, 210);
+            }
+        }
     });
 
-    return new AttachmentBuilder(c.encodePng(), { name: 'kuzo-casino-blue.png' });
+    return new AttachmentBuilder(c.encodePng(), { name: 'kuzo-scene.png' });
+}
+
+function createCompanyBuildingsPng(level = 1, pendingRatio = 0.4) {
+    const c = new BluePngCanvas(640, 220);
+    c.fillBlueTheme();
+    c.drawRectOutline(12, 12, 616, 196, 3, 56, 189, 248, 220);
+
+    // Sol de la zone d'entreprise
+    c.fillRect(26, 184, 588, 5, 56, 189, 248, 200);
+
+    const numBuildings = Math.min(5, Math.max(1, level));
+    const spacing = 540 / numBuildings;
+
+    for (let i = 0; i < numBuildings; i++) {
+        const bw = Math.min(92, Math.floor(spacing * 0.72));
+        const bx = Math.round(50 + i * spacing + (spacing - bw) / 2);
+        const hFactor = Math.min(1, 0.42 + ((i + level) % 4) * 0.16 + pendingRatio * 0.15);
+        const bh = Math.round(55 + hFactor * 85);
+        const by = 184 - bh;
+
+        // Tour / bâtiment bleu cyber
+        c.fillRect(bx, by, bw, bh, 10, 38, 90, 235);
+        c.drawRectOutline(bx, by, bw, bh, 2, 56, 189, 248, 240);
+
+        // Toit / antenne
+        c.fillRect(bx + Math.floor(bw / 2) - 2, by - 14, 4, 14, 125, 211, 252, 255);
+
+        // Grille de fenêtres
+        for (let wy = by + 10; wy < 172; wy += 16) {
+            for (let wx = bx + 10; wx < bx + bw - 16; wx += 18) {
+                c.fillRect(wx, wy, 9, 7, 186, 230, 253, 225);
+            }
+        }
+    }
+
+    return new AttachmentBuilder(c.encodePng(), { name: 'kuzo-company.png' });
 }
 
 function createCryptoGraphPng(history = []) {
-    const c = new BluePngCanvas(680, 240);
+    const c = new BluePngCanvas(640, 220);
     c.fillBlueTheme();
-    c.drawRectOutline(14, 14, 652, 212, 3, 56, 189, 248, 220);
+    c.drawRectOutline(12, 12, 616, 196, 3, 56, 189, 248, 220);
 
-    const gx = 36, gy = 38, gw = 608, gh = 162;
+    const gx = 32, gy = 30, gw = 576, gh = 160;
     c.fillRect(gx, gy, gw, gh, 6, 20, 48, 220);
     c.drawRectOutline(gx, gy, gw, gh, 2, 56, 189, 248, 170);
 
@@ -321,7 +369,7 @@ function createCryptoGraphPng(history = []) {
         c.fillRect(p.x - 4, p.y - 4, 8, 8, 224, 242, 254, 255);
     }
 
-    return new AttachmentBuilder(c.encodePng(), { name: 'kuzo-crypto-graph.png' });
+    return new AttachmentBuilder(c.encodePng(), { name: 'kuzo-crypto.png' });
 }
 
 setInterval(() => {
@@ -348,13 +396,33 @@ function buildContainerV2({ title, body, footer }) {
         );
 }
 
-async function replyKuzo(message, { title, body, attachment, footer, components = [] }) {
+// Quand il y a une image : on affiche l'Embed avec l'image directement (remplace le texte) pour qu'elle s'affiche toujours dans le chat
+async function replyKuzo(message, { title, body, attachment, footer, components = [], imageOnly = false }) {
+    if (attachment) {
+        const visualEmbed = new EmbedBuilder()
+            .setColor('#0ea5e9')
+            .setTitle(title)
+            .setImage(`attachment://${attachment.name}`)
+            .setFooter({ text: footer || 'Kuzo Casino • Préfixe *' });
+
+        if (!imageOnly && body) {
+            visualEmbed.setDescription(body);
+        }
+
+        return message.reply({
+            embeds: [visualEmbed],
+            files: [attachment],
+            components,
+            allowedMentions: { parse: [] }
+        });
+    }
+
     const container = buildContainerV2({ title, body, footer });
     const payload = {
         flags: MessageFlags.IsComponentsV2,
-        components: [container, ...components]
+        components: [container, ...components],
+        allowedMentions: { parse: [] }
     };
-    if (attachment) payload.files = [attachment];
 
     try {
         return await message.reply(payload);
@@ -364,11 +432,10 @@ async function replyKuzo(message, { title, body, attachment, footer, components 
             .setTitle(title)
             .setDescription(body)
             .setFooter({ text: footer || 'Kuzo Casino • Préfixe *' });
-        if (attachment) embed.setImage(`attachment://${attachment.name}`);
         return message.reply({
             embeds: [embed],
-            files: attachment ? [attachment] : [],
-            components
+            components,
+            allowedMentions: { parse: [] }
         });
     }
 }
@@ -391,7 +458,7 @@ function handValue(cards) {
 }
 
 async function handleBlackjack(message, args) {
-    const u = getUser(message.author.id);
+    const u = getUser(message.author.id, message.author);
     const bet = parseBetAmount(args[0], u.cash);
     if (!bet) {
         return replyKuzo(message, { title: '🃏 BLACKJACK', body: 'Utilisation : `*blackjack <mise|all>` ou `*bj <mise|all>`' });
@@ -413,12 +480,12 @@ async function handleBlackjack(message, args) {
         new ButtonBuilder().setCustomId('bj_stand').setLabel('Rester').setStyle(ButtonStyle.Secondary)
     );
 
-    const png = createBlueBannerPng([pVal / 21, 0.5, u.cash / Math.max(1, u.cash + bet)]);
+    const png = createBlueScenePng([pVal / 21, 0.5, u.cash / Math.max(1, u.cash + bet)]);
 
     const sent = await replyKuzo(message, {
-        title: '🃏 BLACKJACK',
-        body: `**Mise :** ${formatMoney(bet)}\n**Ta main :** \`${playerCards.join(' ')}\` (**${pVal}**)\n**Croupier :** \`${dealerCards[0]}\` \`[?]\``,
+        title: `🃏 BLACKJACK • Mise ${formatMoney(bet)} • Main ${playerCards.join(' ')} (${pVal}) • Croupier ${dealerCards[0]} [?]`,
         attachment: png,
+        imageOnly: true,
         components: [row]
     });
 
@@ -426,7 +493,7 @@ async function handleBlackjack(message, args) {
 }
 
 async function handleRoulette(message, args) {
-    const u = getUser(message.author.id);
+    const u = getUser(message.author.id, message.author);
     const choiceRaw = (args[0] || '').toLowerCase();
     const bet = parseBetAmount(args[1], u.cash);
     const valid = ['rouge', 'red', 'noir', 'black', 'vert', 'green', 'pair', 'even', 'impair', 'odd'];
@@ -444,12 +511,13 @@ async function handleRoulette(message, args) {
     const num = Math.floor(Math.random() * 37);
     const reds = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
     const color = num === 0 ? 'vert' : (reds.has(num) ? 'rouge' : 'noir');
-    const parity = num === 0 ? 'zero' : (num % 2 === 0 ? 'pair' : 'impair');
 
     const norm = ['rouge', 'red'].includes(choiceRaw) ? 'rouge'
         : ['noir', 'black'].includes(choiceRaw) ? 'noir'
         : ['vert', 'green'].includes(choiceRaw) ? 'vert'
         : ['pair', 'even'].includes(choiceRaw) ? 'pair' : 'impair';
+
+    const parity = num === 0 ? 'zero' : (num % 2 === 0 ? 'pair' : 'impair');
 
     let mult = 0;
     if (norm === 'vert' && color === 'vert') mult = 14;
@@ -460,17 +528,17 @@ async function handleRoulette(message, args) {
     else { u.stats.losses += 1; }
     saveData();
 
-    const png = createBlueBannerPng([num / 36, win > 0 ? 1 : 0.15, u.cash / Math.max(1, u.cash + bet)]);
+    const png = createBlueScenePng([num / 36, win > 0 ? 1 : 0.2, u.cash / Math.max(1, u.cash + bet)]);
 
     return replyKuzo(message, {
-        title: win > 0 ? '🎡 ROULETTE • GAGNÉ' : '🎡 ROULETTE • PERDU',
-        body: `**Numéro :** \`${num}\` (**${color.toUpperCase()}** / ${parity})\n**Gain :** ${win > 0 ? `+**${formatMoney(win)}**` : `-**${formatMoney(bet)}**`}\n**Cash :** ${formatMoney(u.cash)}`,
-        attachment: png
+        title: `🎡 ROULETTE • ${num} (${color.toUpperCase()}) • ${win > 0 ? `+${formatMoney(win)}` : `-${formatMoney(bet)}`} • Cash ${formatMoney(u.cash)}`,
+        attachment: png,
+        imageOnly: true
     });
 }
 
 async function handleSlots(message, args) {
-    const u = getUser(message.author.id);
+    const u = getUser(message.author.id, message.author);
     const bet = parseBetAmount(args[0], u.cash);
     if (!bet) return replyKuzo(message, { title: '🎰 SLOTS', body: 'Utilisation : `*slots <mise|all>`' });
     if (u.cash < bet) return replyKuzo(message, { title: '🎰 SLOTS', body: `❌ Fonds insuffisants (${formatMoney(u.cash)}).` });
@@ -489,17 +557,17 @@ async function handleSlots(message, args) {
     else { u.stats.losses += 1; }
     saveData();
 
-    const png = createBlueBannerPng([mult / 10, win > 0 ? 0.9 : 0.2, u.cash / Math.max(1, u.cash + bet)]);
+    const png = createBlueScenePng([mult / 10, win > 0 ? 0.9 : 0.25, u.cash / Math.max(1, u.cash + bet)]);
 
     return replyKuzo(message, {
-        title: '🎰 MACHINE À SOUS',
-        body: `**[ ${r.join(' | ')} ]**\n${win > 0 ? `✅ Gain : **+${formatMoney(win)}**` : `❌ Perte : **-${formatMoney(bet)}**`}\n**Cash :** ${formatMoney(u.cash)}`,
-        attachment: png
+        title: `🎰 SLOTS • [ ${r.join(' | ')} ] • ${win > 0 ? `+${formatMoney(win)}` : `-${formatMoney(bet)}`} • Cash ${formatMoney(u.cash)}`,
+        attachment: png,
+        imageOnly: true
     });
 }
 
 async function handleCoinflip(message, args) {
-    const u = getUser(message.author.id);
+    const u = getUser(message.author.id, message.author);
     const side = (args[0] || '').toLowerCase();
     const bet = parseBetAmount(args[1], u.cash);
     if (!['pile', 'face'].includes(side) || !bet) {
@@ -515,17 +583,17 @@ async function handleCoinflip(message, args) {
     else { u.stats.losses += 1; }
     saveData();
 
-    const png = createBlueBannerPng([won ? 1 : 0.2, 0.5, u.cash / Math.max(1, u.cash + bet)]);
+    const png = createBlueScenePng([won ? 1 : 0.25, 0.55, u.cash / Math.max(1, u.cash + bet)]);
 
     return replyKuzo(message, {
-        title: '🪙 COINFLIP',
-        body: `**Résultat :** \`${outcome.toUpperCase()}\` • **Choix :** \`${side}\`\n${won ? `✅ Gain : **+${formatMoney(bet * 2)}**` : `❌ Perte : **-${formatMoney(bet)}**`}\n**Cash :** ${formatMoney(u.cash)}`,
-        attachment: png
+        title: `🪙 COINFLIP • ${outcome.toUpperCase()} • ${won ? `+${formatMoney(bet * 2)}` : `-${formatMoney(bet)}`} • Cash ${formatMoney(u.cash)}`,
+        attachment: png,
+        imageOnly: true
     });
 }
 
 async function handleDice(message, args) {
-    const u = getUser(message.author.id);
+    const u = getUser(message.author.id, message.author);
     const guess = parseInt(args[0], 10);
     const bet = parseBetAmount(args[1], u.cash);
     if (isNaN(guess) || guess < 1 || guess > 6 || !bet) {
@@ -542,17 +610,17 @@ async function handleDice(message, args) {
     else { u.stats.losses += 1; }
     saveData();
 
-    const png = createBlueBannerPng([roll / 6, won ? 1 : 0.2, u.cash / Math.max(1, u.cash + bet)]);
+    const png = createBlueScenePng([roll / 6, won ? 1 : 0.2, u.cash / Math.max(1, u.cash + bet)]);
 
     return replyKuzo(message, {
-        title: '🎲 LANCER DE DÉ',
-        body: `**Dé :** \`${roll}\` • **Ton choix :** \`${guess}\`\n${won ? `✅ Jackpot x5 : **+${formatMoney(win)}**` : `❌ Perdu : **-${formatMoney(bet)}**`}\n**Cash :** ${formatMoney(u.cash)}`,
-        attachment: png
+        title: `🎲 DICE • Dé ${roll} (Choix ${guess}) • ${won ? `+${formatMoney(win)}` : `-${formatMoney(bet)}`} • Cash ${formatMoney(u.cash)}`,
+        attachment: png,
+        imageOnly: true
     });
 }
 
 async function handleCrash(message, args) {
-    const u = getUser(message.author.id);
+    const u = getUser(message.author.id, message.author);
     const bet = parseBetAmount(args[0], u.cash);
     if (!bet) return replyKuzo(message, { title: '🚀 CRASH', body: 'Utilisation : `*crash <mise|all>`' });
     if (u.cash < bet) return replyKuzo(message, { title: '🚀 CRASH', body: `❌ Fonds insuffisants (${formatMoney(u.cash)}).` });
@@ -568,33 +636,33 @@ async function handleCrash(message, args) {
     else { u.stats.losses += 1; }
     saveData();
 
-    const png = createBlueBannerPng([Math.min(1, targetMult / 3), Math.min(1, crashAt / 3), u.cash / Math.max(1, u.cash + bet)]);
+    const png = createBlueScenePng([Math.min(1, targetMult / 3), Math.min(1, crashAt / 3), u.cash / Math.max(1, u.cash + bet)]);
 
     return replyKuzo(message, {
-        title: '🚀 CRASH GAME',
-        body: `**Multiplicateur encaissé :** \`x${targetMult}\` • **Crash à :** \`x${crashAt}\`\n${won ? `✅ Encaissé : **+${formatMoney(payout)}**` : `💥 Crash avant l'encaissement : **-${formatMoney(bet)}**`}\n**Cash :** ${formatMoney(u.cash)}`,
-        attachment: png
+        title: `🚀 CRASH • x${targetMult} (Crash x${crashAt}) • ${won ? `+${formatMoney(payout)}` : `-${formatMoney(bet)}`} • Cash ${formatMoney(u.cash)}`,
+        attachment: png,
+        imageOnly: true
     });
 }
 async function handleBalance(message) {
     const target = message.mentions.users.first() || message.author;
-    const data = getUser(target.id);
+    const data = getUser(target.id, target);
     const total = data.cash + data.bank;
-    const png = createBlueBannerPng([
+    const png = createBlueScenePng([
         data.cash / Math.max(1, total),
         data.bank / Math.max(1, total),
         1
     ]);
 
     return replyKuzo(message, {
-        title: `💳 BALANCE • ${target.username}`,
-        body: `**Cash :** ${formatMoney(data.cash)}\n**Banque :** ${formatMoney(data.bank)}\n**Total :** ${formatMoney(total)}`,
-        attachment: png
+        title: `💳 ${data.username} • Cash ${formatMoney(data.cash)} • Banque ${formatMoney(data.bank)} • Total ${formatMoney(total)}`,
+        attachment: png,
+        imageOnly: true
     });
 }
 
 function handleDeposit(message, args) {
-    const u = getUser(message.author.id);
+    const u = getUser(message.author.id, message.author);
     const amount = parseBetAmount(args[0], u.cash);
     if (!amount || u.cash < amount) {
         return replyKuzo(message, { title: '🏦 DÉPÔT', body: 'Utilisation : `*deposit <montant|all>`' });
@@ -606,7 +674,7 @@ function handleDeposit(message, args) {
 }
 
 function handleWithdraw(message, args) {
-    const u = getUser(message.author.id);
+    const u = getUser(message.author.id, message.author);
     const amount = parseBetAmount(args[0], u.bank);
     if (!amount || u.bank < amount) {
         return replyKuzo(message, { title: '🏦 RETRAIT', body: 'Utilisation : `*withdraw <montant|all>`' });
@@ -618,7 +686,7 @@ function handleWithdraw(message, args) {
 }
 
 async function handleWork(message) {
-    const u = getUser(message.author.id);
+    const u = getUser(message.author.id, message.author);
     const now = Date.now(), cd = 30 * 60 * 1000;
     if (now - u.cooldowns.work < cd) {
         return replyKuzo(message, { title: '💼 TRAVAIL', body: `⏳ Reviens dans **${formatCooldown(cd - (now - u.cooldowns.work))}**.` });
@@ -627,12 +695,16 @@ async function handleWork(message) {
     const gain = Math.floor(Math.random() * 900) + 450;
     u.cash += gain;
     saveData();
-    const png = createBlueBannerPng([0.75, 0.45, 0.9]);
-    return replyKuzo(message, { title: '💼 TRAVAIL', body: `Tu as gagné **+${formatMoney(gain)}** !`, attachment: png });
+    const png = createBlueScenePng([0.75, 0.5, 0.9]);
+    return replyKuzo(message, {
+        title: `💼 TRAVAIL • +${formatMoney(gain)} • Cash ${formatMoney(u.cash)}`,
+        attachment: png,
+        imageOnly: true
+    });
 }
 
-function handleDaily(message) {
-    const u = getUser(message.author.id);
+async function handleDaily(message) {
+    const u = getUser(message.author.id, message.author);
     const now = Date.now(), cd = 24 * 60 * 60 * 1000;
     if (now - u.cooldowns.daily < cd) {
         return replyKuzo(message, { title: '🎁 DAILY', body: `⏳ Prochain daily dans **${formatCooldown(cd - (now - u.cooldowns.daily))}**.` });
@@ -641,31 +713,36 @@ function handleDaily(message) {
     const gain = 2500;
     u.cash += gain;
     saveData();
-    return replyKuzo(message, { title: '🎁 DAILY', body: `Tu as reçu **+${formatMoney(gain)}** !` });
+    const png = createBlueScenePng([0.9, 0.65, 1]);
+    return replyKuzo(message, {
+        title: `🎁 DAILY • +${formatMoney(gain)} • Cash ${formatMoney(u.cash)}`,
+        attachment: png,
+        imageOnly: true
+    });
 }
 
-function handleCrime(message) {
-    const u = getUser(message.author.id);
+async function handleCrime(message) {
+    const u = getUser(message.author.id, message.author);
     const now = Date.now(), cd = 20 * 60 * 1000;
     if (now - u.cooldowns.crime < cd) {
         return replyKuzo(message, { title: '🕵️ CRIME', body: `⏳ Patiente **${formatCooldown(cd - (now - u.cooldowns.crime))}**.` });
     }
     u.cooldowns.crime = now;
-    if (Math.random() < 0.55) {
-        const gain = Math.floor(Math.random() * 1400) + 600;
-        u.cash += gain;
-        saveData();
-        return replyKuzo(message, { title: '🕵️ CRIME RÉUSSI', body: `Coup réussi : **+${formatMoney(gain)}** !` });
-    } else {
-        const loss = Math.min(u.cash, 700);
-        u.cash -= loss;
-        saveData();
-        return replyKuzo(message, { title: '🚨 PRIS SUR LE FAIT', body: `Amende payée : **-${formatMoney(loss)}**.` });
-    }
+    const ok = Math.random() < 0.55;
+    const amt = ok ? Math.floor(Math.random() * 1400) + 600 : Math.min(u.cash, 700);
+    if (ok) u.cash += amt;
+    else u.cash -= amt;
+    saveData();
+    const png = createBlueScenePng([ok ? 0.95 : 0.2, 0.6, ok ? 1 : 0.3]);
+    return replyKuzo(message, {
+        title: `🕵️ CRIME • ${ok ? `+${formatMoney(amt)}` : `-${formatMoney(amt)}`} • Cash ${formatMoney(u.cash)}`,
+        attachment: png,
+        imageOnly: true
+    });
 }
 
-function handleRob(message) {
-    const attacker = getUser(message.author.id);
+async function handleRob(message) {
+    const attacker = getUser(message.author.id, message.author);
     const target = message.mentions.users.first();
     if (!target || target.bot || target.id === message.author.id) {
         return replyKuzo(message, { title: '🔫 VOL', body: 'Utilisation : `*rob <@membre>`' });
@@ -678,40 +755,43 @@ function handleRob(message) {
         return replyKuzo(message, { title: '🔫 VOL', body: `⏳ Reviens dans **${formatCooldown(cd - (now - attacker.cooldowns.rob))}**.` });
     }
     attacker.cooldowns.rob = now;
-    const victim = getUser(target.id);
+    const victim = getUser(target.id, target);
     if (victim.cash < 200) {
         return replyKuzo(message, { title: '🔫 VOL', body: '❌ La cible n\'a pas assez de cash.' });
     }
-    if (Math.random() < 0.45) {
-        const stolen = Math.min(victim.cash, Math.max(200, Math.floor(victim.cash * 0.25)));
-        victim.cash -= stolen;
-        attacker.cash += stolen;
-        saveData();
-        return replyKuzo(message, { title: '🔫 VOL RÉUSSI', body: `Tu as volé **+${formatMoney(stolen)}** à **${target.username}** !` });
+    const ok = Math.random() < 0.45;
+    const amt = ok ? Math.min(victim.cash, Math.max(200, Math.floor(victim.cash * 0.25))) : Math.min(attacker.cash, 500);
+    if (ok) {
+        victim.cash -= amt;
+        attacker.cash += amt;
     } else {
-        const fine = Math.min(attacker.cash, 500);
-        attacker.cash -= fine;
-        saveData();
-        return replyKuzo(message, { title: '🚨 VOL RATÉ', body: `Tu as été attrapé : **-${formatMoney(fine)}**.` });
+        attacker.cash -= amt;
     }
+    saveData();
+    const png = createBlueScenePng([ok ? 0.9 : 0.2, 0.5, ok ? 1 : 0.3]);
+    return replyKuzo(message, {
+        title: `🔫 VOL • ${ok ? `+${formatMoney(amt)} sur ${victim.username}` : `-${formatMoney(amt)}`} • Cash ${formatMoney(attacker.cash)}`,
+        attachment: png,
+        imageOnly: true
+    });
 }
 
 function handlePay(message, args) {
-    const sender = getUser(message.author.id);
+    const sender = getUser(message.author.id, message.author);
     const target = message.mentions.users.first();
     const amount = parseBetAmount(args[1], sender.cash);
     if (!target || target.bot || target.id === message.author.id || !amount || sender.cash < amount) {
         return replyKuzo(message, { title: '💸 PAY', body: 'Utilisation : `*pay <@membre> <montant|all>`' });
     }
-    const receiver = getUser(target.id);
+    const receiver = getUser(target.id, target);
     sender.cash -= amount;
     receiver.cash += amount;
     saveData();
-    return replyKuzo(message, { title: '💸 VIREMENT', body: `Envoyé **${formatMoney(amount)}** à ${target}.` });
+    return replyKuzo(message, { title: '💸 VIREMENT', body: `Envoyé **${formatMoney(amount)}** à **${receiver.username}**.` });
 }
 
 async function handleCompany(message, args) {
-    const u = getUser(message.author.id);
+    const u = getUser(message.author.id, message.author);
     const sub = (args[0] || 'info').toLowerCase();
 
     if (sub === 'create') {
@@ -722,7 +802,12 @@ async function handleCompany(message, args) {
         u.cash -= cost;
         u.company = { name, level: 1, incomePerHour: 600, lastCollect: Date.now() };
         saveData();
-        return replyKuzo(message, { title: '🏢 ENTREPRISE CRÉÉE', body: `**${name}** créée pour **${formatMoney(cost)}** !` });
+        const png = createCompanyBuildingsPng(1, 0.2);
+        return replyKuzo(message, {
+            title: `🏢 ${name} • Niv. 1 • 600 🪙/h`,
+            attachment: png,
+            imageOnly: true
+        });
     }
 
     if (!u.company) {
@@ -735,7 +820,12 @@ async function handleCompany(message, args) {
         u.company.lastCollect = Date.now();
         u.cash += pending;
         saveData();
-        return replyKuzo(message, { title: '🏢 RÉCOLTE', body: `Récolté **+${formatMoney(pending)}** de **${u.company.name}**.` });
+        const png = createCompanyBuildingsPng(u.company.level, 0.1);
+        return replyKuzo(message, {
+            title: `🏢 ${u.company.name} • Récolté +${formatMoney(pending)} • Cash ${formatMoney(u.cash)}`,
+            attachment: png,
+            imageOnly: true
+        });
     }
 
     if (sub === 'upgrade') {
@@ -746,24 +836,24 @@ async function handleCompany(message, args) {
         u.company.incomePerHour += 550;
         u.company.lastCollect = Date.now();
         saveData();
-        return replyKuzo(message, { title: '🏢 UPGRADE', body: `**${u.company.name}** niveau **${u.company.level}** (${formatMoney(u.company.incomePerHour)}/h) !` });
+        const png = createCompanyBuildingsPng(u.company.level, 0.3);
+        return replyKuzo(message, {
+            title: `🏢 ${u.company.name} • Niv. ${u.company.level} • ${formatMoney(u.company.incomePerHour)}/h`,
+            attachment: png,
+            imageOnly: true
+        });
     }
 
-    const png = createBlueBannerPng([
-        Math.min(1, u.company.level / 10),
-        Math.min(1, u.company.incomePerHour / 5000),
-        Math.min(1, pending / 5000)
-    ]);
-
+    const png = createCompanyBuildingsPng(u.company.level, Math.min(1, pending / 3000));
     return replyKuzo(message, {
-        title: `🏢 ${u.company.name}`,
-        body: `**Niveau :** ${u.company.level}\n**Revenu :** ${formatMoney(u.company.incomePerHour)}/h\n**En attente :** ${formatMoney(pending)}`,
-        attachment: png
+        title: `🏢 ${u.company.name} • Niv. ${u.company.level} • ${formatMoney(u.company.incomePerHour)}/h • À récolter ${formatMoney(pending)}`,
+        attachment: png,
+        imageOnly: true
     });
 }
 
 async function handleCrypto(message, args) {
-    const u = getUser(message.author.id);
+    const u = getUser(message.author.id, message.author);
     const sub = (args[0] || 'market').toLowerCase();
 
     if (sub === 'buy') {
@@ -777,7 +867,11 @@ async function handleCrypto(message, args) {
         u.crypto[sym] = (u.crypto[sym] || 0) + amount;
         saveData();
         const png = createCryptoGraphPng(c.history);
-        return replyKuzo(message, { title: `📈 ACHAT ${sym}`, body: `Acheté **${amount} ${sym}** pour **${formatMoney(cost)}**.`, attachment: png });
+        return replyKuzo(message, {
+            title: `📈 ACHAT ${amount} ${sym} • ${formatMoney(cost)} • Solde ${u.crypto[sym]} ${sym}`,
+            attachment: png,
+            imageOnly: true
+        });
     }
 
     if (sub === 'sell') {
@@ -792,23 +886,29 @@ async function handleCrypto(message, args) {
         u.cash += gain;
         saveData();
         const png = createCryptoGraphPng(c.history);
-        return replyKuzo(message, { title: `📉 VENTE ${sym}`, body: `Vendu **${amount} ${sym}** pour **+${formatMoney(gain)}**.`, attachment: png });
+        return replyKuzo(message, {
+            title: `📉 VENTE ${amount} ${sym} • +${formatMoney(gain)} • Cash ${formatMoney(u.cash)}`,
+            attachment: png,
+            imageOnly: true
+        });
     }
 
     const sym = db.cryptos[sub.toUpperCase()] ? sub.toUpperCase() : 'KZO';
     const c = db.cryptos[sym];
     const png = createCryptoGraphPng(c.history);
-    const list = Object.entries(db.cryptos).map(([k, v]) => `• **${k}** : **${formatMoney(v.price)}** (Solde : \`${u.crypto[k] || 0}\`)`).join('\n');
+    const resume = Object.entries(db.cryptos)
+        .map(([k, v]) => `${k}: ${v.price.toLocaleString('fr-FR')} 🪙 (${u.crypto[k] || 0})`)
+        .join(' • ');
 
     return replyKuzo(message, {
-        title: '📊 MARCHÉ CRYPTO',
-        body: `${list}\n\n\`*crypto buy <SYM> <qté>\` • \`*crypto sell <SYM> <qté>\``,
-        attachment: png
+        title: `📊 ${sym} ${formatMoney(c.price)} • ${resume}`,
+        attachment: png,
+        imageOnly: true
     });
 }
 
 async function handleHack(message) {
-    const atk = getUser(message.author.id);
+    const atk = getUser(message.author.id, message.author);
     const target = message.mentions.users.first();
     if (!target || target.bot || target.id === message.author.id) {
         return replyKuzo(message, { title: '💻 HACK', body: 'Utilisation : `*hack <@membre>`' });
@@ -821,9 +921,9 @@ async function handleHack(message) {
         return replyKuzo(message, { title: '💻 HACK', body: `⏳ Recharge dans **${formatCooldown(cd - (now - atk.cooldowns.hack))}**.` });
     }
     atk.cooldowns.hack = now;
-    const def = getUser(target.id);
+    const def = getUser(target.id, target);
     const ok = Math.random() < 0.48 && def.cash >= 200;
-    const png = createBlueBannerPng([ok ? 0.95 : 0.2, 0.7, ok ? 1 : 0.3]);
+    const png = createBlueScenePng([ok ? 0.95 : 0.2, 0.7, ok ? 1 : 0.3]);
 
     if (ok) {
         const stolen = Math.min(def.cash, Math.max(250, Math.floor(def.cash * 0.2)));
@@ -831,14 +931,23 @@ async function handleHack(message) {
         atk.cash += stolen;
         atk.stats.hacksSuccess += 1;
         saveData();
-        return replyKuzo(message, { title: '💻 HACK RÉUSSI', body: `Volé **+${formatMoney(stolen)}** à **${target.username}** !`, attachment: png });
+        return replyKuzo(message, {
+            title: `💻 HACK RÉUSSI • +${formatMoney(stolen)} sur ${def.username} • Cash ${formatMoney(atk.cash)}`,
+            attachment: png,
+            imageOnly: true
+        });
     } else {
         const fine = Math.min(atk.cash, 450);
         atk.cash -= fine;
         saveData();
-        return replyKuzo(message, { title: '🚨 HACK ÉCHOUÉ', body: `Détecté ! Perte de **-${formatMoney(fine)}**.`, attachment: png });
+        return replyKuzo(message, {
+            title: `🚨 HACK ÉCHOUÉ • -${formatMoney(fine)} • Cash ${formatMoney(atk.cash)}`,
+            attachment: png,
+            imageOnly: true
+        });
     }
 }
+
 client.on('interactionCreate', async interaction => {
     if (!interaction.isButton()) return;
     const game = activeBlackjacks.get(interaction.message.id);
@@ -847,8 +956,8 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: 'Ce blackjack ne t\'appartient pas.', ephemeral: true }).catch(() => {});
     }
 
-    const u = getUser(game.userId);
-    let finished = false, msgEnd = '';
+    const u = getUser(game.userId, interaction.user);
+    let finished = false, status = '';
 
     if (interaction.customId === 'bj_hit') {
         game.playerCards.push(drawCard());
@@ -856,19 +965,19 @@ client.on('interactionCreate', async interaction => {
         if (pVal > 21) {
             finished = true;
             u.stats.losses += 1;
-            msgEnd = `💥 Bust (${pVal}) ! Perdu **${formatMoney(game.bet)}**.`;
+            status = `Bust (${pVal}) • -${formatMoney(game.bet)}`;
         } else if (pVal === 21) {
             finished = true;
             while (handValue(game.dealerCards) < 17) game.dealerCards.push(drawCard());
             const dVal = handValue(game.dealerCards);
             if (dVal === 21) {
                 u.cash += game.bet;
-                msgEnd = `🤝 Égalité à 21 ! Mise rendue.`;
+                status = `Égalité 21 • Remboursé`;
             } else {
                 const win = game.bet * 2;
                 u.cash += win;
                 u.stats.wins += 1;
-                msgEnd = `🔥 21 gagnant ! **+${formatMoney(win)}** !`;
+                status = `21 Gagnant • +${formatMoney(win)}`;
             }
         }
     } else if (interaction.customId === 'bj_stand') {
@@ -882,30 +991,35 @@ client.on('interactionCreate', async interaction => {
             const win = game.bet * 2;
             u.cash += win;
             u.stats.wins += 1;
-            msgEnd = `🏆 Victoire (${pVal} vs ${dVal}) ! **+${formatMoney(win)}** !`;
+            status = `Victoire (${pVal} vs ${dVal}) • +${formatMoney(win)}`;
         } else if (pVal === dVal) {
             u.cash += game.bet;
-            msgEnd = `🤝 Égalité (${pVal} vs ${dVal}) ! Mise rendue.`;
+            status = `Égalité (${pVal} vs ${dVal}) • Remboursé`;
         } else {
             u.stats.losses += 1;
-            msgEnd = `❌ Croupier gagne (${pVal} vs ${dVal}). Perdu **${formatMoney(game.bet)}**.`;
+            status = `Perdu (${pVal} vs ${dVal}) • -${formatMoney(game.bet)}`;
         }
     }
 
     saveData();
     const pVal = handValue(game.playerCards);
     const dVal = handValue(game.dealerCards);
-    const body = finished
-        ? `**Ta main :** \`${game.playerCards.join(' ')}\` (**${pVal}**)\n**Croupier :** \`${game.dealerCards.join(' ')}\` (**${dVal}**)\n\n${msgEnd}\n**Cash :** ${formatMoney(u.cash)}`
-        : `**Mise :** ${formatMoney(game.bet)}\n**Ta main :** \`${game.playerCards.join(' ')}\` (**${pVal}**)\n**Croupier :** \`${game.dealerCards[0]}\` \`[?]\``;
+    const png = createBlueScenePng([pVal / 21, dVal / 21, u.cash / Math.max(1, u.cash + game.bet)]);
 
-    const container = buildContainerV2({ title: finished ? '🃏 BLACKJACK TERMINÉ' : '🃏 BLACKJACK', body });
+    const embed = new EmbedBuilder()
+        .setColor('#0ea5e9')
+        .setTitle(finished
+            ? `🃏 BJ FIN • Main ${game.playerCards.join(' ')} (${pVal}) vs Croupier ${game.dealerCards.join(' ')} (${dVal}) • ${status} • Cash ${formatMoney(u.cash)}`
+            : `🃏 BJ • Mise ${formatMoney(game.bet)} • Main ${game.playerCards.join(' ')} (${pVal}) • Croupier ${game.dealerCards[0]} [?]`)
+        .setImage('attachment://kuzo-scene.png')
+        .setFooter({ text: 'Kuzo Casino • Préfixe *' });
+
     if (finished) activeBlackjacks.delete(interaction.message.id);
 
     await interaction.update({
-        flags: MessageFlags.IsComponentsV2,
-        components: finished ? [container] : [
-            container,
+        embeds: [embed],
+        files: [png],
+        components: finished ? [] : [
             new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('bj_hit').setLabel('Tirer').setStyle(ButtonStyle.Primary),
                 new ButtonBuilder().setCustomId('bj_stand').setLabel('Rester').setStyle(ButtonStyle.Secondary)
@@ -917,6 +1031,8 @@ client.on('interactionCreate', async interaction => {
 client.on('messageCreate', async message => {
     if (!message.author || message.author.bot || !message.guild) return;
     if (!message.content.startsWith(PREFIX)) return;
+
+    getUser(message.author.id, message.author);
 
     const args = message.content.slice(PREFIX.length).trim().split(/ +/);
     const command = (args.shift() || '').toLowerCase();
@@ -939,10 +1055,10 @@ client.on('messageCreate', async message => {
         if (!target || isNaN(amt) || amt < 0) {
             return replyKuzo(message, { title: '💰 SETMONEY', body: 'Utilisation : `*setmoney <@membre> <montant>`' });
         }
-        const u = getUser(target.id);
+        const u = getUser(target.id, target);
         u.cash = amt;
         saveData();
-        return replyKuzo(message, { title: '💰 SETMONEY', body: `Cash de **${target.username}** défini sur **${formatMoney(amt)}**.` });
+        return replyKuzo(message, { title: '💰 SETMONEY', body: `Cash de **${u.username}** défini sur **${formatMoney(amt)}**.` });
     }
 
     if (command === 'help') {
@@ -987,16 +1103,30 @@ client.on('messageCreate', async message => {
 
     if (command === 'leaderboard' || command === 'lb' || command === 'top') {
         const entries = Object.entries(db.users)
-            .map(([id, u]) => ({ id, total: (u.cash || 0) + (u.bank || 0) }))
+            .map(([id, u]) => ({
+                id,
+                name: u.username || `Joueur_${id.slice(-4)}`,
+                total: (u.cash || 0) + (u.bank || 0)
+            }))
             .sort((a, b) => b.total - a.total)
             .slice(0, 10);
 
-        const text = entries.length > 0
-            ? entries.map((e, i) => `**#${i + 1}** <@${e.id}> — **${formatMoney(e.total)}**`).join('\n')
-            : 'Aucun joueur enregistré.';
+        const top3Ratios = entries.slice(0, 3).map(e => {
+            const maxVal = Math.max(1, entries[0]?.total || 1);
+            return e.total / maxVal;
+        });
 
-        const png = createBlueBannerPng([1, 0.75, 0.5]);
-        return replyKuzo(message, { title: '🏆 CLASSEMENT', body: text, attachment: png });
+        const lbSummary = entries.length > 0
+            ? entries.map((e, i) => `#${i + 1} ${e.name} — ${formatMoney(e.total)}`).join(' • ')
+            : 'Aucun joueur enregistré';
+
+        const png = createBlueScenePng(top3Ratios.length ? top3Ratios : [1, 0.7, 0.4]);
+
+        return replyKuzo(message, {
+            title: `🏆 CLASSEMENT • ${lbSummary}`,
+            attachment: png,
+            imageOnly: true
+        });
     }
 });
 
