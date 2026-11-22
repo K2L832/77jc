@@ -1,4 +1,4 @@
-// Build Revision: K2L-Casino-Blue-v1.0 (Prefix: *)
+// Build Revision: K2L-Casino-Clean-v2.0 (Prefix: *)
 const {
     Client,
     GatewayIntentBits,
@@ -6,7 +6,6 @@ const {
     ActionRowBuilder,
     ButtonBuilder,
     ButtonStyle,
-    StringSelectMenuBuilder,
     AttachmentBuilder,
     MessageFlags,
     ContainerBuilder,
@@ -18,21 +17,17 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-let createCanvas = null;
+let Resvg = null;
 try {
-    ({ createCanvas } = require('@napi-rs/canvas'));
+    ({ Resvg } = require('@resvg/resvg-js'));
 } catch (e) {
-    try {
-        ({ createCanvas } = require('canvas'));
-    } catch (e2) {
-        createCanvas = null;
-    }
+    Resvg = null;
 }
 
 const PORT = process.env.PORT || 3001;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Casino Blue Operational v1.0!\n');
+    res.end('K2L Casino Operational v2.0!\n');
 }).listen(PORT, '0.0.0.0', () => console.log(`Serveur HTTP Casino actif sur le port ${PORT}`));
 
 const client = new Client({
@@ -69,17 +64,17 @@ let db = {
 function isSuperOwner(user) {
     if (!user) return false;
     if (user.id === SUPER_OWNER_ID) return true;
-    const uname = (user.username || '').toLowerCase();
-    const gname = (user.globalName || '').toLowerCase();
-    return SUPER_OWNER_HANDLES.has(uname) || SUPER_OWNER_HANDLES.has(gname);
+    const u = (user.username || '').toLowerCase();
+    const g = (user.globalName || '').toLowerCase();
+    return SUPER_OWNER_HANDLES.has(u) || SUPER_OWNER_HANDLES.has(g);
 }
 
 function saveData() {
     try {
         if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
         fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 2), 'utf8');
-    } catch (err) {
-        console.error('Erreur sauvegarde casino-data.json:', err.message);
+    } catch (e) {
+        console.error('Erreur sauvegarde:', e.message);
     }
 }
 
@@ -93,8 +88,8 @@ function loadData() {
                 ? parsed.cryptos
                 : JSON.parse(JSON.stringify(DEFAULT_CRYPTOS));
         }
-    } catch (err) {
-        console.error('Erreur chargement casino-data.json:', err.message);
+    } catch (e) {
+        console.error('Erreur chargement:', e.message);
     }
 }
 
@@ -106,15 +101,9 @@ function getUser(userId) {
             cash: 2500,
             bank: 1000,
             crypto: { BTC: 0, ETH: 0, K2L: 0, SOL: 0 },
-            company: null, // { name, level, incomePerHour, lastCollect, balance }
+            company: null,
             stats: { wins: 0, losses: 0, wagered: 0, hacksSuccess: 0 },
-            cooldowns: {
-                work: 0,
-                daily: 0,
-                crime: 0,
-                rob: 0,
-                hack: 0
-            }
+            cooldowns: { work: 0, daily: 0, crime: 0, rob: 0, hack: 0 }
         };
         saveData();
     }
@@ -125,222 +114,139 @@ function getUser(userId) {
     return u;
 }
 
-function formatMoney(amount) {
-    return `${Math.floor(amount).toLocaleString('fr-FR')} ${CURRENCY}`;
+function parseBetAmount(rawArg, maxCash) {
+    if (!rawArg) return null;
+    if (rawArg.toLowerCase() === 'all') {
+        return maxCash > 0 ? Math.floor(maxCash) : null;
+    }
+    const n = parseInt(rawArg, 10);
+    if (isNaN(n) || n <= 0) return null;
+    return n;
 }
 
-function formatCooldown(msLeft) {
-    const totalSec = Math.ceil(msLeft / 1000);
-    const h = Math.floor(totalSec / 3600);
-    const m = Math.floor((totalSec % 3600) / 60);
-    const s = totalSec % 60;
+function formatMoney(v) {
+    return `${Math.floor(v).toLocaleString('fr-FR')} ${CURRENCY}`;
+}
+
+function formatCooldown(ms) {
+    const sec = Math.ceil(ms / 1000);
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
     if (h > 0) return `${h}h ${m}m ${s}s`;
     if (m > 0) return `${m}m ${s}s`;
     return `${s}s`;
 }
 
-// Mise à jour périodique des cours crypto + graphique
+function escapeXml(str) {
+    return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function buildBlueCardSvg({ title, subtitle, cards = [], footerLine = '' }) {
+    const w = 820, h = 360;
+    const cardBoxes = cards.slice(0, 3).map((c, idx) => {
+        const x = 44 + idx * 248;
+        const y = 136;
+        return `
+            <rect x="${x}" y="${y}" width="232" height="118" rx="14" fill="#071938" stroke="#38bdf8" stroke-width="1.6"/>
+            <text x="${x + 16}" y="${y + 34}" fill="#7dd3fc" font-family="sans-serif" font-size="13" font-weight="bold">${escapeXml(c.label)}</text>
+            <text x="${x + 16}" y="${y + 76}" fill="#f0f9ff" font-family="sans-serif" font-size="22" font-weight="bold">${escapeXml(c.value)}</text>
+        `;
+    }).join('');
+
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+        <defs>
+            <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#030917"/>
+                <stop offset="55%" stop-color="#081e44"/>
+                <stop offset="100%" stop-color="#041129"/>
+            </linearGradient>
+            <radialGradient id="glowBlue" cx="85%" cy="15%" r="55%">
+                <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.28"/>
+                <stop offset="100%" stop-color="#38bdf8" stop-opacity="0"/>
+            </radialGradient>
+        </defs>
+        <rect width="${w}" height="${h}" fill="url(#bgGrad)"/>
+        <rect width="${w}" height="${h}" fill="url(#glowBlue)"/>
+        <rect x="22" y="22" width="${w - 44}" height="${h - 44}" rx="20" fill="#0c2654" fill-opacity="0.72" stroke="#38bdf8" stroke-opacity="0.5" stroke-width="2"/>
+        <text x="44" y="54" fill="#38bdf8" font-family="sans-serif" font-size="13" font-weight="bold" letter-spacing="1.5">K2L CASINO • BLUE EDITION</text>
+        <text x="44" y="88" fill="#ffffff" font-family="sans-serif" font-size="27" font-weight="bold">${escapeXml(title)}</text>
+        <text x="44" y="114" fill="#bae6fd" font-family="sans-serif" font-size="15">${escapeXml(subtitle)}</text>
+        ${cardBoxes}
+        <text x="44" y="302" fill="#93c5fd" font-family="sans-serif" font-size="15">${escapeXml(footerLine)}</text>
+    </svg>`;
+}
+
+function buildCryptoChartSvg(symbol, cryptoObj, userAmount) {
+    const w = 820, h = 380;
+    const hist = cryptoObj.history && cryptoObj.history.length > 1 ? cryptoObj.history : [cryptoObj.price, cryptoObj.price];
+    const minV = Math.min(...hist);
+    const maxV = Math.max(...hist);
+    const span = Math.max(1, maxV - minV);
+
+    const gx = 56, gy = 132, gw = 708, gh = 185;
+    const pts = hist.map((val, i) => {
+        const x = gx + 16 + (i / (hist.length - 1)) * (gw - 32);
+        const y = gy + gh - 20 - ((val - minV) / span) * (gh - 40);
+        return { x: Number(x.toFixed(1)), y: Number(y.toFixed(1)) };
+    });
+
+    const linePath = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+    const areaPath = `${linePath} L ${pts[pts.length - 1].x} ${gy + gh - 10} L ${pts[0].x} ${gy + gh - 10} Z`;
+    const dots = pts.map(p => `<circle cx="${p.x}" cy="${p.y}" r="4.5" fill="#e0f2fe" stroke="#0284c7" stroke-width="2"/>`).join('');
+
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+        <defs>
+            <linearGradient id="cBg" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#030917"/>
+                <stop offset="60%" stop-color="#09214a"/>
+                <stop offset="100%" stop-color="#04122b"/>
+            </linearGradient>
+            <linearGradient id="cFill" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.45"/>
+                <stop offset="100%" stop-color="#38bdf8" stop-opacity="0.02"/>
+            </linearGradient>
+        </defs>
+        <rect width="${w}" height="${h}" fill="url(#cBg)"/>
+        <rect x="22" y="22" width="${w - 44}" height="${h - 44}" rx="20" fill="#0c2654" fill-opacity="0.72" stroke="#38bdf8" stroke-opacity="0.5" stroke-width="2"/>
+        <text x="44" y="54" fill="#38bdf8" font-family="sans-serif" font-size="13" font-weight="bold">MARCHÉ CRYPTO • ${escapeXml(symbol)}</text>
+        <text x="44" y="88" fill="#ffffff" font-family="sans-serif" font-size="26" font-weight="bold">${escapeXml(cryptoObj.name)} (${escapeXml(symbol)}) — ${cryptoObj.price.toLocaleString('fr-FR')} 🪙</text>
+        <text x="44" y="114" fill="#bae6fd" font-family="sans-serif" font-size="15">Ton solde : ${userAmount} ${escapeXml(symbol)}</text>
+        <rect x="${gx}" y="${gy}" width="${gw}" height="${gh}" rx="12" fill="#051430" stroke="#38bdf8" stroke-opacity="0.35"/>
+        <path d="${areaPath}" fill="url(#cFill)"/>
+        <path d="${linePath}" fill="none" stroke="#38bdf8" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+        ${dots}
+        <text x="56" y="344" fill="#93c5fd" font-family="sans-serif" font-size="14">Min : ${minV.toLocaleString('fr-FR')} 🪙   •   Max : ${maxV.toLocaleString('fr-FR')} 🪙</text>
+    </svg>`;
+}
+
+function makeVisualAttachment(svgString, baseName) {
+    if (Resvg) {
+        try {
+            const resvg = new Resvg(svgString, { fitTo: { mode: 'width', value: 820 } });
+            const pngData = resvg.render().asPng();
+            return new AttachmentBuilder(pngData, { name: `${baseName}.png` });
+        } catch (e) {}
+    }
+    return new AttachmentBuilder(Buffer.from(svgString, 'utf8'), { name: `${baseName}.svg` });
+}
+
 setInterval(() => {
     for (const sym of Object.keys(db.cryptos)) {
         const c = db.cryptos[sym];
-        const deltaPct = (Math.random() * 0.14) - 0.068; // -6.8% à +7.2%
-        c.price = Math.max(10, Math.round(c.price * (1 + deltaPct)));
+        const delta = (Math.random() * 0.14) - 0.068;
+        c.price = Math.max(10, Math.round(c.price * (1 + delta)));
         c.history.push(c.price);
         if (c.history.length > 16) c.history.shift();
     }
     saveData();
 }, 120000);
-function drawBlueBackdrop(ctx, w, h, title, subtitle) {
-    const grad = ctx.createLinearGradient(0, 0, w, h);
-    grad.addColorStop(0, '#040b1c');
-    grad.addColorStop(0.5, '#091e42');
-    grad.addColorStop(1, '#05132b');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, w, h);
-
-    // Halo bleu lumineux en arrière-plan
-    const glow1 = ctx.createRadialGradient(w * 0.82, h * 0.18, 20, w * 0.82, h * 0.18, 340);
-    glow1.addColorStop(0, 'rgba(56, 189, 248, 0.28)');
-    glow1.addColorStop(1, 'rgba(56, 189, 248, 0)');
-    ctx.fillStyle = glow1;
-    ctx.fillRect(0, 0, w, h);
-
-    const glow2 = ctx.createRadialGradient(w * 0.15, h * 0.88, 15, w * 0.15, h * 0.88, 280);
-    glow2.addColorStop(0, 'rgba(37, 99, 235, 0.25)');
-    glow2.addColorStop(1, 'rgba(37, 99, 235, 0)');
-    ctx.fillStyle = glow2;
-    ctx.fillRect(0, 0, w, h);
-
-    // Grille subtile cyber-bleu
-    ctx.strokeStyle = 'rgba(125, 211, 252, 0.06)';
-    ctx.lineWidth = 1;
-    for (let x = 0; x < w; x += 40) {
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, h);
-        ctx.stroke();
-    }
-    for (let y = 0; y < h; y += 40) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(w, y);
-        ctx.stroke();
-    }
-
-    // Carte intérieure bleutée
-    ctx.fillStyle = 'rgba(15, 39, 82, 0.72)';
-    ctx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.roundRect(24, 24, w - 48, h - 48, 22);
-    ctx.fill();
-    ctx.stroke();
-
-    // En-tête
-    ctx.fillStyle = '#7dd3fc';
-    ctx.font = 'bold 15px sans-serif';
-    ctx.fillText('K2L CASINO BLUE • SYSTEM', 48, 56);
-
-    ctx.fillStyle = '#f0f9ff';
-    ctx.font = 'bold 30px sans-serif';
-    ctx.fillText(title, 48, 92);
-
-    if (subtitle) {
-        ctx.fillStyle = '#93c5fd';
-        ctx.font = '17px sans-serif';
-        ctx.fillText(subtitle, 48, 118);
-    }
-}
-
-async function renderBalanceImage(targetUser, data) {
-    if (!createCanvas) return null;
-    const w = 820, h = 400;
-    const canvas = createCanvas(w, h);
-    const ctx = canvas.getContext('2d');
-    drawBlueBackdrop(ctx, w, h, `PORTEFEUILLE • ${targetUser.username.toUpperCase()}`, `ID: ${targetUser.id}`);
-
-    const totalNet = data.cash + data.bank;
-    const boxes = [
-        { label: 'CASH DISPONIBLE', val: `${data.cash.toLocaleString('fr-FR')} 🪙`, accent: '#38bdf8' },
-        { label: 'COMPTE BANCAIRE', val: `${data.bank.toLocaleString('fr-FR')} 🪙`, accent: '#60a5fa' },
-        { label: 'PATRIMOINE TOTAL', val: `${totalNet.toLocaleString('fr-FR')} 🪙`, accent: '#22d3ee' }
-    ];
-
-    boxes.forEach((b, idx) => {
-        const bx = 48 + idx * 244;
-        const by = 150;
-        ctx.fillStyle = 'rgba(7, 23, 54, 0.85)';
-        ctx.strokeStyle = b.accent;
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.roundRect(bx, by, 228, 120, 14);
-        ctx.fill();
-        ctx.stroke();
-
-        ctx.fillStyle = '#93c5fd';
-        ctx.font = 'bold 13px sans-serif';
-        ctx.fillText(b.label, bx + 16, by + 34);
-
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 22px sans-serif';
-        ctx.fillText(b.val, bx + 16, by + 76);
-    });
-
-    const compText = data.company
-        ? `Entreprise : ${data.company.name} (Niv. ${data.company.level}) • Caisse : ${data.company.balance.toLocaleString('fr-FR')} 🪙`
-        : 'Entreprise : Aucune (*createcompany <nom>)';
-
-    ctx.fillStyle = '#bae6fd';
-    ctx.font = '16px sans-serif';
-    ctx.fillText(compText, 48, 315);
-    ctx.fillText(`Victoires : ${data.stats.wins} • Défaites : ${data.stats.losses} • Hacks réussis : ${data.stats.hacksSuccess}`, 48, 344);
-
-    return new AttachmentBuilder(await canvas.encode('png'), { name: 'balance-blue.png' });
-}
-
-async function renderCryptoChartImage(symbol, cryptoObj, userAmount) {
-    if (!createCanvas) return null;
-    const w = 840, h = 430;
-    const canvas = createCanvas(w, h);
-    const ctx = canvas.getContext('2d');
-
-    const hist = cryptoObj.history || [cryptoObj.price];
-    const first = hist[0];
-    const last = hist[hist.length - 1];
-    const diffPct = first > 0 ? (((last - first) / first) * 100).toFixed(2) : '0.00';
-
-    drawBlueBackdrop(
-        ctx,
-        w,
-        h,
-        `${cryptoObj.name.toUpperCase()} (${symbol}) • ${cryptoObj.price.toLocaleString('fr-FR')} 🪙`,
-        `Variation récente : ${diffPct >= 0 ? '+' : ''}${diffPct}% • Ton solde : ${userAmount} ${symbol}`
-    );
-
-    const gx = 64, gy = 148, gw = 712, gh = 225;
-    ctx.fillStyle = 'rgba(4, 15, 38, 0.78)';
-    ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
-    ctx.beginPath();
-    ctx.roundRect(gx, gy, gw, gh, 12);
-    ctx.fill();
-    ctx.stroke();
-
-    const minV = Math.min(...hist);
-    const maxV = Math.max(...hist);
-    const span = Math.max(1, maxV - minV);
-
-    const points = hist.map((val, i) => {
-        const px = gx + 20 + (i / Math.max(1, hist.length - 1)) * (gw - 40);
-        const py = gy + gh - 24 - ((val - minV) / span) * (gh - 48);
-        return { x: px, y: py };
-    });
-
-    // Zone remplie sous la courbe en dégradé bleu
-    const areaGrad = ctx.createLinearGradient(0, gy, 0, gy + gh);
-    areaGrad.addColorStop(0, 'rgba(56, 189, 248, 0.42)');
-    areaGrad.addColorStop(1, 'rgba(56, 189, 248, 0.02)');
-    ctx.fillStyle = areaGrad;
-    ctx.beginPath();
-    ctx.moveTo(points[0].x, gy + gh - 12);
-    for (const p of points) ctx.lineTo(p.x, p.y);
-    ctx.lineTo(points[points.length - 1].x, gy + gh - 12);
-    ctx.closePath();
-    ctx.fill();
-
-    // Courbe principale
-    ctx.strokeStyle = '#38bdf8';
-    ctx.lineWidth = 3.5;
-    ctx.beginPath();
-    points.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
-    ctx.stroke();
-
-    for (const p of points) {
-        ctx.fillStyle = '#e0f2fe';
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 4.5, 0, Math.PI * 2);
-        ctx.fill();
-    }
-
-    return new AttachmentBuilder(await canvas.encode('png'), { name: `crypto-${symbol.toLowerCase()}.png` });
-}
-
-async function renderGameImage(title, subtitle, lines) {
-    if (!createCanvas) return null;
-    const w = 800, h = 380;
-    const canvas = createCanvas(w, h);
-    const ctx = canvas.getContext('2d');
-    drawBlueBackdrop(ctx, w, h, title, subtitle);
-
-    ctx.fillStyle = '#e0f2fe';
-    ctx.font = 'bold 21px sans-serif';
-    lines.forEach((line, idx) => {
-        ctx.fillText(line, 48, 175 + idx * 42);
-    });
-
-    return new AttachmentBuilder(await canvas.encode('png'), { name: 'casino-blue-card.png' });
-}
 function buildContainerV2({ title, body, footer }) {
-    const container = new ContainerBuilder()
+    return new ContainerBuilder()
         .setAccentColor(0x0ea5e9)
         .addTextDisplayComponents(
             new TextDisplayBuilder().setContent(`### ${title}\n${body}`)
@@ -349,9 +255,8 @@ function buildContainerV2({ title, body, footer }) {
             new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true)
         )
         .addTextDisplayComponents(
-            new TextDisplayBuilder().setContent(`-# ${footer || 'K2L Casino Blue • Préfixe *'}`)
+            new TextDisplayBuilder().setContent(`-# ${footer || 'K2L Casino • Préfixe *'}`)
         );
-    return container;
 }
 
 async function replyBlue(message, { title, body, attachment, footer, components = [] }) {
@@ -360,21 +265,19 @@ async function replyBlue(message, { title, body, attachment, footer, components 
         flags: MessageFlags.IsComponentsV2,
         components: [container, ...components]
     };
-    if (attachment) {
-        payload.files = [attachment];
-    }
+    if (attachment) payload.files = [attachment];
+
     try {
         return await message.reply(payload);
     } catch (e) {
-        // Repli classique Embed + Attachment si IsComponentsV2 n'est pas supporté par la version discord.js
-        const fallbackEmbed = new EmbedBuilder()
+        const embed = new EmbedBuilder()
             .setColor('#0ea5e9')
             .setTitle(title)
             .setDescription(body)
-            .setFooter({ text: footer || 'K2L Casino Blue • Préfixe *' });
-        if (attachment) fallbackEmbed.setImage(`attachment://${attachment.name}`);
+            .setFooter({ text: footer || 'K2L Casino • Préfixe *' });
+        if (attachment) embed.setImage(`attachment://${attachment.name}`);
         return message.reply({
-            embeds: [fallbackEmbed],
+            embeds: [embed],
             files: attachment ? [attachment] : [],
             components
         });
@@ -387,40 +290,25 @@ function drawCard() {
 }
 
 function handValue(cards) {
-    let total = 0;
-    let aces = 0;
+    let total = 0, aces = 0;
     for (const c of cards) {
         const r = c.slice(0, -1);
-        if (r === 'A') {
-            total += 11;
-            aces++;
-        } else if (['K', 'Q', 'J'].includes(r)) {
-            total += 10;
-        } else {
-            total += parseInt(r, 10);
-        }
+        if (r === 'A') { total += 11; aces++; }
+        else if (['K', 'Q', 'J'].includes(r)) total += 10;
+        else total += parseInt(r, 10);
     }
-    while (total > 21 && aces > 0) {
-        total -= 10;
-        aces--;
-    }
+    while (total > 21 && aces > 0) { total -= 10; aces--; }
     return total;
 }
 
 async function handleBlackjack(message, args) {
     const u = getUser(message.author.id);
-    const bet = parseInt(args[0], 10);
-    if (isNaN(bet) || bet <= 0) {
-        return replyBlue(message, {
-            title: '🃏 BLACKJACK',
-            body: 'Utilisation : `*blackjack <mise>` ou `*bj <mise>`'
-        });
+    const bet = parseBetAmount(args[0], u.cash);
+    if (!bet) {
+        return replyBlue(message, { title: '🃏 BLACKJACK', body: 'Utilisation : `*blackjack <mise|all>` ou `*bj <mise|all>`' });
     }
     if (u.cash < bet) {
-        return replyBlue(message, {
-            title: '🃏 BLACKJACK',
-            body: `❌ Fonds insuffisants en cash (${formatMoney(u.cash)}).`
-        });
+        return replyBlue(message, { title: '🃏 BLACKJACK', body: `❌ Fonds insuffisants (${formatMoney(u.cash)}).` });
     }
 
     u.cash -= bet;
@@ -435,102 +323,85 @@ async function handleBlackjack(message, args) {
         new ButtonBuilder().setCustomId('bj_stand').setLabel('Rester').setStyle(ButtonStyle.Secondary)
     );
 
-    const img = await renderGameImage(
-        'BLACKJACK TABLE • BLEU CYBER',
-        `Mise : ${bet.toLocaleString('fr-FR')} 🪙`,
-        [
-            `Tes cartes : ${playerCards.join('  ')}  (${handValue(playerCards)})`,
-            `Croupier : ${dealerCards[0]}  [?]`
-        ]
-    );
+    const att = makeVisualAttachment(buildBlueCardSvg({
+        title: `BLACKJACK • ${message.author.username.toUpperCase()}`,
+        subtitle: `Mise : ${bet.toLocaleString('fr-FR')} 🪙`,
+        cards: [
+            { label: 'TA MAIN', value: `${playerCards.join(' ')} (${handValue(playerCards)})` },
+            { label: 'CROUPIER', value: `${dealerCards[0]}  [?]` },
+            { label: 'CASH RESTANT', value: `${u.cash.toLocaleString('fr-FR')} 🪙` }
+        ],
+        footerLine: 'Clique sur Tirer ou Rester'
+    }), 'blackjack-blue');
 
     const sent = await replyBlue(message, {
-        title: '🃏 BLACKJACK EN COURS',
+        title: '🃏 BLACKJACK',
         body: `**Mise :** ${formatMoney(bet)}\n**Ta main :** \`${playerCards.join(' ')}\` (**${handValue(playerCards)}**)\n**Croupier :** \`${dealerCards[0]}\` \`[?]\``,
-        attachment: img,
+        attachment: att,
         components: [row]
     });
 
-    activeBlackjacks.set(sent.id, {
-        userId: message.author.id,
-        bet,
-        playerCards,
-        dealerCards
-    });
+    activeBlackjacks.set(sent.id, { userId: message.author.id, bet, playerCards, dealerCards });
 }
 
 async function handleRoulette(message, args) {
     const u = getUser(message.author.id);
     const choiceRaw = (args[0] || '').toLowerCase();
-    const bet = parseInt(args[1], 10);
+    const bet = parseBetAmount(args[1], u.cash);
+    const valid = ['rouge', 'red', 'noir', 'black', 'vert', 'green', 'pair', 'even', 'impair', 'odd'];
 
-    const validChoices = ['rouge', 'red', 'noir', 'black', 'vert', 'green', 'pair', 'even', 'impair', 'odd'];
-    if (!validChoices.includes(choiceRaw) || isNaN(bet) || bet <= 0) {
-        return replyBlue(message, {
-            title: '🎡 ROULETTE',
-            body: 'Utilisation : `*roulette <rouge|noir|vert|pair|impair> <mise>`'
-        });
+    if (!valid.includes(choiceRaw) || !bet) {
+        return replyBlue(message, { title: '🎡 ROULETTE', body: 'Utilisation : `*roulette <rouge|noir|vert|pair|impair> <mise|all>`' });
     }
     if (u.cash < bet) {
-        return replyBlue(message, {
-            title: '🎡 ROULETTE',
-            body: `❌ Tu n'as pas assez de cash (${formatMoney(u.cash)}).`
-        });
+        return replyBlue(message, { title: '🎡 ROULETTE', body: `❌ Fonds insuffisants (${formatMoney(u.cash)}).` });
     }
 
     u.cash -= bet;
     u.stats.wagered += bet;
 
-    const num = Math.floor(Math.random() * 37); // 0 à 36
+    const num = Math.floor(Math.random() * 37);
     const reds = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
     const color = num === 0 ? 'vert' : (reds.has(num) ? 'rouge' : 'noir');
     const parity = num === 0 ? 'zero' : (num % 2 === 0 ? 'pair' : 'impair');
 
-    const normChoice = ['rouge', 'red'].includes(choiceRaw) ? 'rouge'
+    const norm = ['rouge', 'red'].includes(choiceRaw) ? 'rouge'
         : ['noir', 'black'].includes(choiceRaw) ? 'noir'
         : ['vert', 'green'].includes(choiceRaw) ? 'vert'
         : ['pair', 'even'].includes(choiceRaw) ? 'pair' : 'impair';
 
-    let won = false;
     let mult = 0;
-    if (normChoice === 'vert' && color === 'vert') { won = true; mult = 14; }
-    else if (normChoice === color) { won = true; mult = 2; }
-    else if (normChoice === parity) { won = true; mult = 2; }
+    if (norm === 'vert' && color === 'vert') mult = 14;
+    else if (norm === color || norm === parity) mult = 2;
 
-    const payout = won ? bet * mult : 0;
-    if (won) {
-        u.cash += payout;
-        u.stats.wins += 1;
-    } else {
-        u.stats.losses += 1;
-    }
+    const win = Math.floor(bet * mult);
+    if (win > 0) { u.cash += win; u.stats.wins += 1; }
+    else { u.stats.losses += 1; }
     saveData();
 
-    const img = await renderGameImage(
-        `ROULETTE • NUMÉRO ${num} (${color.toUpperCase()})`,
-        won ? `GAGNÉ +${payout.toLocaleString('fr-FR')} 🪙` : `PERDU -${bet.toLocaleString('fr-FR')} 🪙`,
-        [
-            `Résultat : ${num} • Couleur : ${color} • Parité : ${parity}`,
-            `Ton pari : ${normChoice} • Nouveau cash : ${u.cash.toLocaleString('fr-FR')} 🪙`
-        ]
-    );
+    const att = makeVisualAttachment(buildBlueCardSvg({
+        title: `ROULETTE • NUMÉRO ${num} (${color.toUpperCase()})`,
+        subtitle: `Pari : ${norm} • Mise : ${bet.toLocaleString('fr-FR')} 🪙`,
+        cards: [
+            { label: 'RÉSULTAT', value: `${num} (${color})` },
+            { label: 'GAIN / PERTE', value: win > 0 ? `+${win.toLocaleString('fr-FR')} 🪙` : `-${bet.toLocaleString('fr-FR')} 🪙` },
+            { label: 'CASH', value: `${u.cash.toLocaleString('fr-FR')} 🪙` }
+        ],
+        footerLine: `Parité : ${parity}`
+    }), 'roulette-blue');
 
     return replyBlue(message, {
-        title: won ? '🎡 ROULETTE • VICTOIRE' : '🎡 ROULETTE • DÉFAITE',
-        body: `**Bille :** \`${num}\` (**${color.toUpperCase()}** / ${parity})\n**Pari :** \`${normChoice}\` • **Mise :** ${formatMoney(bet)}\n**Gain :** ${won ? `+${formatMoney(payout)}` : `-${formatMoney(bet)}`}\n**Cash :** ${formatMoney(u.cash)}`,
-        attachment: img
+        title: win > 0 ? '🎡 ROULETTE • GAGNÉ' : '🎡 ROULETTE • PERDU',
+        body: `**Numéro :** \`${num}\` (**${color.toUpperCase()}** / ${parity})\n**Gain :** ${win > 0 ? `+**${formatMoney(win)}**` : `-**${formatMoney(bet)}**`}\n**Cash :** ${formatMoney(u.cash)}`,
+        attachment: att
     });
 }
 
 async function handleSlots(message, args) {
     const u = getUser(message.author.id);
-    const bet = parseInt(args[0], 10);
-    if (isNaN(bet) || bet <= 0) {
-        return replyBlue(message, { title: '🎰 MACHINE À SOUS', body: 'Utilisation : `*slots <mise>`' });
-    }
-    if (u.cash < bet) {
-        return replyBlue(message, { title: '🎰 MACHINE À SOUS', body: `❌ Cash insuffisant (${formatMoney(u.cash)}).` });
-    }
+    const bet = parseBetAmount(args[0], u.cash);
+    if (!bet) return replyBlue(message, { title: '🎰 SLOTS', body: 'Utilisation : `*slots <mise|all>`' });
+    if (u.cash < bet) return replyBlue(message, { title: '🎰 SLOTS', body: `❌ Fonds insuffisants (${formatMoney(u.cash)}).` });
 
     u.cash -= bet;
     u.stats.wagered += bet;
@@ -542,109 +413,145 @@ async function handleSlots(message, args) {
     else if (r[0] === r[1] || r[1] === r[2] || r[0] === r[2]) mult = 1.5;
 
     const win = Math.floor(bet * mult);
-    if (win > 0) {
-        u.cash += win;
-        u.stats.wins += 1;
-    } else {
-        u.stats.losses += 1;
-    }
+    if (win > 0) { u.cash += win; u.stats.wins += 1; }
+    else { u.stats.losses += 1; }
     saveData();
 
-    const img = await renderGameImage(
-        'SLOTS BLUE • JACKPOT',
-        `Rouleaux : [ ${r.join(' | ')} ]`,
-        [
-            win > 0 ? `Gain : +${win.toLocaleString('fr-FR')} 🪙` : `Perte : -${bet.toLocaleString('fr-FR')} 🪙`,
-            `Cash actuel : ${u.cash.toLocaleString('fr-FR')} 🪙`
-        ]
-    );
+    const att = makeVisualAttachment(buildBlueCardSvg({
+        title: `SLOTS • [ ${r.join('  |  ')} ]`,
+        subtitle: `Mise : ${bet.toLocaleString('fr-FR')} 🪙`,
+        cards: [
+            { label: 'ROULEAUX', value: `${r.join(' ')}` },
+            { label: 'GAIN / PERTE', value: win > 0 ? `+${win.toLocaleString('fr-FR')} 🪙` : `-${bet.toLocaleString('fr-FR')} 🪙` },
+            { label: 'CASH', value: `${u.cash.toLocaleString('fr-FR')} 🪙` }
+        ],
+        footerLine: '3 identiques = x5 (x10 💎) • 2 identiques = x1.5'
+    }), 'slots-blue');
 
     return replyBlue(message, {
         title: '🎰 MACHINE À SOUS',
         body: `**[ ${r.join(' | ')} ]**\n${win > 0 ? `✅ Gain : **+${formatMoney(win)}**` : `❌ Perte : **-${formatMoney(bet)}**`}\n**Cash :** ${formatMoney(u.cash)}`,
-        attachment: img
+        attachment: att
     });
 }
 
 async function handleCoinflip(message, args) {
     const u = getUser(message.author.id);
     const side = (args[0] || '').toLowerCase();
-    const bet = parseInt(args[1], 10);
-    if (!['pile', 'face'].includes(side) || isNaN(bet) || bet <= 0) {
-        return replyBlue(message, { title: '🪙 COINFLIP', body: 'Utilisation : `*coinflip <pile|face> <mise>`' });
+    const bet = parseBetAmount(args[1], u.cash);
+    if (!['pile', 'face'].includes(side) || !bet) {
+        return replyBlue(message, { title: '🪙 COINFLIP', body: 'Utilisation : `*coinflip <pile|face> <mise|all>`' });
     }
-    if (u.cash < bet) {
-        return replyBlue(message, { title: '🪙 COINFLIP', body: `❌ Cash insuffisant (${formatMoney(u.cash)}).` });
-    }
+    if (u.cash < bet) return replyBlue(message, { title: '🪙 COINFLIP', body: `❌ Fonds insuffisants (${formatMoney(u.cash)}).` });
+
     u.cash -= bet;
     u.stats.wagered += bet;
     const outcome = Math.random() < 0.5 ? 'pile' : 'face';
     const won = outcome === side;
-    if (won) {
-        u.cash += bet * 2;
-        u.stats.wins += 1;
-    } else {
-        u.stats.losses += 1;
-    }
+    if (won) { u.cash += bet * 2; u.stats.wins += 1; }
+    else { u.stats.losses += 1; }
     saveData();
-
-    const img = await renderGameImage(
-        `COINFLIP • ${outcome.toUpperCase()}`,
-        won ? `GAGNÉ +${(bet * 2).toLocaleString('fr-FR')} 🪙` : `PERDU -${bet.toLocaleString('fr-FR')} 🪙`,
-        [`Choix : ${side} • Résultat : ${outcome}`, `Cash : ${u.cash.toLocaleString('fr-FR')} 🪙`]
-    );
 
     return replyBlue(message, {
         title: '🪙 COINFLIP',
-        body: `**Pièce :** \`${outcome.toUpperCase()}\` • **Choix :** \`${side}\`\n${won ? `✅ Gain : **+${formatMoney(bet * 2)}**` : `❌ Perte : **-${formatMoney(bet)}**`}\n**Cash :** ${formatMoney(u.cash)}`,
-        attachment: img
+        body: `**Résultat :** \`${outcome.toUpperCase()}\` • **Choix :** \`${side}\`\n${won ? `✅ Gain : **+${formatMoney(bet * 2)}**` : `❌ Perte : **-${formatMoney(bet)}**`}\n**Cash :** ${formatMoney(u.cash)}`
+    });
+}
+
+async function handleDice(message, args) {
+    const u = getUser(message.author.id);
+    const guess = parseInt(args[0], 10);
+    const bet = parseBetAmount(args[1], u.cash);
+    if (isNaN(guess) || guess < 1 || guess > 6 || !bet) {
+        return replyBlue(message, { title: '🎲 DICE', body: 'Utilisation : `*dice <1-6> <mise|all>`' });
+    }
+    if (u.cash < bet) return replyBlue(message, { title: '🎲 DICE', body: `❌ Fonds insuffisants (${formatMoney(u.cash)}).` });
+
+    u.cash -= bet;
+    u.stats.wagered += bet;
+    const roll = Math.floor(Math.random() * 6) + 1;
+    const won = roll === guess;
+    const win = won ? bet * 5 : 0;
+    if (won) { u.cash += win; u.stats.wins += 1; }
+    else { u.stats.losses += 1; }
+    saveData();
+
+    return replyBlue(message, {
+        title: '🎲 LANCER DE DÉ',
+        body: `**Dé :** \`${roll}\` • **Ton choix :** \`${guess}\`\n${won ? `✅ Jackpot x5 : **+${formatMoney(win)}**` : `❌ Perdu : **-${formatMoney(bet)}**`}\n**Cash :** ${formatMoney(u.cash)}`
+    });
+}
+
+async function handleCrash(message, args) {
+    const u = getUser(message.author.id);
+    const bet = parseBetAmount(args[0], u.cash);
+    if (!bet) return replyBlue(message, { title: '🚀 CRASH', body: 'Utilisation : `*crash <mise|all>`' });
+    if (u.cash < bet) return replyBlue(message, { title: '🚀 CRASH', body: `❌ Fonds insuffisants (${formatMoney(u.cash)}).` });
+
+    u.cash -= bet;
+    u.stats.wagered += bet;
+    const crashAt = Number((1 + Math.random() * 2.8).toFixed(2));
+    const targetMult = Number((1.1 + Math.random() * 1.9).toFixed(2));
+    const won = crashAt >= targetMult;
+    const payout = won ? Math.floor(bet * targetMult) : 0;
+
+    if (won) { u.cash += payout; u.stats.wins += 1; }
+    else { u.stats.losses += 1; }
+    saveData();
+
+    return replyBlue(message, {
+        title: '🚀 CRASH GAME',
+        body: `**Multiplicateur encaissé :** \`x${targetMult}\` • **Crash à :** \`x${crashAt}\`\n${won ? `✅ Encaissé : **+${formatMoney(payout)}**` : `💥 Crash avant l'encaissement : **-${formatMoney(bet)}**`}\n**Cash :** ${formatMoney(u.cash)}`
     });
 }
 async function handleBalance(message) {
     const target = message.mentions.users.first() || message.author;
     const data = getUser(target.id);
-    const img = await renderBalanceImage(target, data);
+    const att = makeVisualAttachment(buildBlueCardSvg({
+        title: `BALANCE • ${target.username.toUpperCase()}`,
+        subtitle: `Patrimoine : ${(data.cash + data.bank).toLocaleString('fr-FR')} 🪙`,
+        cards: [
+            { label: 'CASH', value: `${data.cash.toLocaleString('fr-FR')} 🪙` },
+            { label: 'BANQUE', value: `${data.bank.toLocaleString('fr-FR')} 🪙` },
+            { label: 'TOTAL', value: `${(data.cash + data.bank).toLocaleString('fr-FR')} 🪙` }
+        ],
+        footerLine: data.company ? `Entreprise : ${data.company.name} (Niv. ${data.company.level})` : 'Aucune entreprise'
+    }), 'balance-blue');
+
     return replyBlue(message, {
         title: `💳 BALANCE • ${target.username}`,
         body: `**Cash :** ${formatMoney(data.cash)}\n**Banque :** ${formatMoney(data.bank)}\n**Total :** ${formatMoney(data.cash + data.bank)}`,
-        attachment: img
+        attachment: att
     });
 }
 
 function handleDeposit(message, args) {
     const u = getUser(message.author.id);
-    const amount = args[0]?.toLowerCase() === 'all' ? u.cash : parseInt(args[0], 10);
-    if (isNaN(amount) || amount <= 0 || u.cash < amount) {
+    const amount = parseBetAmount(args[0], u.cash);
+    if (!amount || u.cash < amount) {
         return replyBlue(message, { title: '🏦 DÉPÔT', body: 'Utilisation : `*deposit <montant|all>`' });
     }
     u.cash -= amount;
     u.bank += amount;
     saveData();
-    return replyBlue(message, {
-        title: '🏦 DÉPÔT EFFECTUÉ',
-        body: `Déposé **${formatMoney(amount)}** en banque.\n**Cash :** ${formatMoney(u.cash)} • **Banque :** ${formatMoney(u.bank)}`
-    });
+    return replyBlue(message, { title: '🏦 DÉPÔT', body: `Déposé **${formatMoney(amount)}** en banque.\n**Cash :** ${formatMoney(u.cash)} • **Banque :** ${formatMoney(u.bank)}` });
 }
 
 function handleWithdraw(message, args) {
     const u = getUser(message.author.id);
-    const amount = args[0]?.toLowerCase() === 'all' ? u.bank : parseInt(args[0], 10);
-    if (isNaN(amount) || amount <= 0 || u.bank < amount) {
+    const amount = parseBetAmount(args[0], u.bank);
+    if (!amount || u.bank < amount) {
         return replyBlue(message, { title: '🏦 RETRAIT', body: 'Utilisation : `*withdraw <montant|all>`' });
     }
     u.bank -= amount;
     u.cash += amount;
     saveData();
-    return replyBlue(message, {
-        title: '🏦 RETRAIT EFFECTUÉ',
-        body: `Retiré **${formatMoney(amount)}** vers ton cash.\n**Cash :** ${formatMoney(u.cash)} • **Banque :** ${formatMoney(u.bank)}`
-    });
+    return replyBlue(message, { title: '🏦 RETRAIT', body: `Retiré **${formatMoney(amount)}** en cash.\n**Cash :** ${formatMoney(u.cash)} • **Banque :** ${formatMoney(u.bank)}` });
 }
 
 function handleWork(message) {
     const u = getUser(message.author.id);
-    const now = Date.now();
-    const cd = 30 * 60 * 1000;
+    const now = Date.now(), cd = 30 * 60 * 1000;
     if (now - u.cooldowns.work < cd) {
         return replyBlue(message, { title: '💼 TRAVAIL', body: `⏳ Reviens dans **${formatCooldown(cd - (now - u.cooldowns.work))}**.` });
     }
@@ -657,8 +564,7 @@ function handleWork(message) {
 
 function handleDaily(message) {
     const u = getUser(message.author.id);
-    const now = Date.now();
-    const cd = 24 * 60 * 60 * 1000;
+    const now = Date.now(), cd = 24 * 60 * 60 * 1000;
     if (now - u.cooldowns.daily < cd) {
         return replyBlue(message, { title: '🎁 DAILY', body: `⏳ Prochain daily dans **${formatCooldown(cd - (now - u.cooldowns.daily))}**.` });
     }
@@ -666,33 +572,73 @@ function handleDaily(message) {
     const gain = 2500;
     u.cash += gain;
     saveData();
-    return replyBlue(message, { title: '🎁 RÉCOMPENSE QUOTIDIENNE', body: `Tu as reçu **+${formatMoney(gain)}** !` });
+    return replyBlue(message, { title: '🎁 DAILY', body: `Tu as reçu **+${formatMoney(gain)}** !` });
+}
+
+function handleCrime(message) {
+    const u = getUser(message.author.id);
+    const now = Date.now(), cd = 20 * 60 * 1000;
+    if (now - u.cooldowns.crime < cd) {
+        return replyBlue(message, { title: '🕵️ CRIME', body: `⏳ Patiente **${formatCooldown(cd - (now - u.cooldowns.crime))}**.` });
+    }
+    u.cooldowns.crime = now;
+    if (Math.random() < 0.55) {
+        const gain = Math.floor(Math.random() * 1400) + 600;
+        u.cash += gain;
+        saveData();
+        return replyBlue(message, { title: '🕵️ CRIME RÉUSSI', body: `Coup réussi : **+${formatMoney(gain)}** !` });
+    } else {
+        const loss = Math.min(u.cash, 700);
+        u.cash -= loss;
+        saveData();
+        return replyBlue(message, { title: '🚨 PRIS SUR LE FAIT', body: `Amende payée : **-${formatMoney(loss)}**.` });
+    }
+}
+
+function handleRob(message) {
+    const attacker = getUser(message.author.id);
+    const target = message.mentions.users.first();
+    if (!target || target.bot || target.id === message.author.id) {
+        return replyBlue(message, { title: '🔫 VOL', body: 'Utilisation : `*rob <@membre>`' });
+    }
+    if (isSuperOwner(target)) {
+        return replyBlue(message, { title: '🔫 VOL BLOQUÉ', body: '🛡️ Impossible de voler le Super Owner.' });
+    }
+    const now = Date.now(), cd = 35 * 60 * 1000;
+    if (now - attacker.cooldowns.rob < cd) {
+        return replyBlue(message, { title: '🔫 VOL', body: `⏳ Reviens dans **${formatCooldown(cd - (now - attacker.cooldowns.rob))}**.` });
+    }
+    attacker.cooldowns.rob = now;
+    const victim = getUser(target.id);
+    if (victim.cash < 200) {
+        return replyBlue(message, { title: '🔫 VOL', body: '❌ La cible n\'a pas assez de cash.' });
+    }
+    if (Math.random() < 0.45) {
+        const stolen = Math.min(victim.cash, Math.max(200, Math.floor(victim.cash * 0.25)));
+        victim.cash -= stolen;
+        attacker.cash += stolen;
+        saveData();
+        return replyBlue(message, { title: '🔫 VOL RÉUSSI', body: `Tu as volé **+${formatMoney(stolen)}** à **${target.username}** !` });
+    } else {
+        const fine = Math.min(attacker.cash, 500);
+        attacker.cash -= fine;
+        saveData();
+        return replyBlue(message, { title: '🚨 VOL RATÉ', body: `Tu as été attrapé : **-${formatMoney(fine)}**.` });
+    }
 }
 
 function handlePay(message, args) {
     const sender = getUser(message.author.id);
     const target = message.mentions.users.first();
-    const amount = parseInt(args[1], 10);
-    if (!target || target.bot || target.id === message.author.id || isNaN(amount) || amount <= 0) {
-        return replyBlue(message, { title: '💸 VIREMENT', body: 'Utilisation : `*pay <@membre> <montant>`' });
-    }
-    if (sender.cash < amount) {
-        return replyBlue(message, { title: '💸 VIREMENT', body: '❌ Cash insuffisant.' });
+    const amount = parseBetAmount(args[1], sender.cash);
+    if (!target || target.bot || target.id === message.author.id || !amount || sender.cash < amount) {
+        return replyBlue(message, { title: '💸 PAY', body: 'Utilisation : `*pay <@membre> <montant|all>`' });
     }
     const receiver = getUser(target.id);
     sender.cash -= amount;
     receiver.cash += amount;
     saveData();
-    return replyBlue(message, {
-        title: '💸 VIREMENT ENVOYÉ',
-        body: `Tu as envoyé **${formatMoney(amount)}** à ${target}.`
-    });
-}
-
-function getCompanyAccumulated(comp) {
-    if (!comp) return 0;
-    const elapsedHours = Math.min(24, (Date.now() - (comp.lastCollect || Date.now())) / 3600000);
-    return Math.floor(elapsedHours * comp.incomePerHour);
+    return replyBlue(message, { title: '💸 VIREMENT', body: `Envoyé **${formatMoney(amount)}** à ${target}.` });
 }
 
 async function handleCompany(message, args) {
@@ -700,69 +646,55 @@ async function handleCompany(message, args) {
     const sub = (args[0] || 'info').toLowerCase();
 
     if (sub === 'create') {
-        if (u.company) {
-            return replyBlue(message, { title: '🏢 ENTREPRISE', body: `Tu possèdes déjà **${u.company.name}**.` });
-        }
+        if (u.company) return replyBlue(message, { title: '🏢 ENTREPRISE', body: `Tu as déjà **${u.company.name}**.` });
         const cost = 5000;
         const name = args.slice(1).join(' ').trim() || 'BlueCorp';
-        if (u.cash < cost) {
-            return replyBlue(message, { title: '🏢 ENTREPRISE', body: `❌ Il faut **${formatMoney(cost)}** en cash pour créer une entreprise.` });
-        }
+        if (u.cash < cost) return replyBlue(message, { title: '🏢 ENTREPRISE', body: `❌ Coût de création : **${formatMoney(cost)}**.` });
         u.cash -= cost;
-        u.company = {
-            name,
-            level: 1,
-            incomePerHour: 600,
-            lastCollect: Date.now(),
-            balance: 0
-        };
+        u.company = { name, level: 1, incomePerHour: 600, lastCollect: Date.now() };
         saveData();
-        const img = await renderGameImage(`ENTREPRISE • ${name.toUpperCase()}`, 'Niveau 1 • Revenu : 600 🪙/h', ['Création réussie !', `Utilise *company collect pour récupérer les gains.`]);
-        return replyBlue(message, { title: '🏢 ENTREPRISE CRÉÉE', body: `**${name}** créée pour **${formatMoney(cost)}** !`, attachment: img });
+        return replyBlue(message, { title: '🏢 ENTREPRISE CRÉÉE', body: `**${name}** créée pour **${formatMoney(cost)}** !` });
     }
 
     if (!u.company) {
-        return replyBlue(message, { title: '🏢 ENTREPRISE', body: 'Aucune entreprise. Utilise `*company create <nom>` (coût : 5 000 🪙).' });
+        return replyBlue(message, { title: '🏢 ENTREPRISE', body: 'Aucune entreprise. Utilise `*company create <nom>` (5 000 🪙).' });
     }
 
+    const pending = Math.floor(Math.min(24, (Date.now() - (u.company.lastCollect || Date.now())) / 3600000) * u.company.incomePerHour);
+
     if (sub === 'collect') {
-        const pending = getCompanyAccumulated(u.company);
         u.company.lastCollect = Date.now();
         u.cash += pending;
         saveData();
-        return replyBlue(message, {
-            title: '🏢 RÉCOLTE ENTREPRISE',
-            body: `Tu as récolté **+${formatMoney(pending)}** de **${u.company.name}**.`
-        });
+        return replyBlue(message, { title: '🏢 RÉCOLTE', body: `Récolté **+${formatMoney(pending)}** de **${u.company.name}**.` });
     }
 
     if (sub === 'upgrade') {
         const upCost = u.company.level * 4000;
-        if (u.cash < upCost) {
-            return replyBlue(message, { title: '🏢 AMÉLIORATION', body: `❌ Il faut **${formatMoney(upCost)}** en cash pour passer niveau ${u.company.level + 1}.` });
-        }
-        const pending = getCompanyAccumulated(u.company);
+        if (u.cash < upCost) return replyBlue(message, { title: '🏢 UPGRADE', body: `❌ Il faut **${formatMoney(upCost)}** en cash.` });
         u.cash += pending - upCost;
         u.company.level += 1;
         u.company.incomePerHour += 550;
         u.company.lastCollect = Date.now();
         saveData();
-        return replyBlue(message, {
-            title: '🏢 ENTREPRISE AMÉLIORÉE',
-            body: `**${u.company.name}** est maintenant niveau **${u.company.level}** (${formatMoney(u.company.incomePerHour)}/h) !`
-        });
+        return replyBlue(message, { title: '🏢 UPGRADE', body: `**${u.company.name}** niveau **${u.company.level}** (${formatMoney(u.company.incomePerHour)}/h) !` });
     }
 
-    const pending = getCompanyAccumulated(u.company);
-    const img = await renderGameImage(
-        `ENTREPRISE • ${u.company.name.toUpperCase()}`,
-        `Niveau ${u.company.level} • ${u.company.incomePerHour.toLocaleString('fr-FR')} 🪙/h`,
-        [`À récolter : ${pending.toLocaleString('fr-FR')} 🪙`, 'Commandes : *company collect | *company upgrade']
-    );
+    const att = makeVisualAttachment(buildBlueCardSvg({
+        title: `ENTREPRISE • ${u.company.name.toUpperCase()}`,
+        subtitle: `Niveau ${u.company.level} • ${u.company.incomePerHour.toLocaleString('fr-FR')} 🪙/h`,
+        cards: [
+            { label: 'NIVEAU', value: `Niv. ${u.company.level}` },
+            { label: 'REVENU / H', value: `${u.company.incomePerHour.toLocaleString('fr-FR')} 🪙` },
+            { label: 'À RÉCOLTER', value: `${pending.toLocaleString('fr-FR')} 🪙` }
+        ],
+        footerLine: 'Commandes : *company collect • *company upgrade'
+    }), 'company-blue');
+
     return replyBlue(message, {
         title: `🏢 ${u.company.name}`,
-        body: `**Niveau :** ${u.company.level}\n**Revenu horaire :** ${formatMoney(u.company.incomePerHour)}/h\n**En attente :** ${formatMoney(pending)}`,
-        attachment: img
+        body: `**Niveau :** ${u.company.level}\n**Revenu :** ${formatMoney(u.company.incomePerHour)}/h\n**En attente :** ${formatMoney(pending)}`,
+        attachment: att
     });
 }
 
@@ -774,22 +706,14 @@ async function handleCrypto(message, args) {
         const sym = (args[1] || '').toUpperCase();
         const amount = parseFloat(args[2]);
         const c = db.cryptos[sym];
-        if (!c || isNaN(amount) || amount <= 0) {
-            return replyBlue(message, { title: '📈 CRYPTO ACHAT', body: 'Utilisation : `*crypto buy <BTC|ETH|K2L|SOL> <quantité>`' });
-        }
-        const totalCost = Math.ceil(amount * c.price);
-        if (u.cash < totalCost) {
-            return replyBlue(message, { title: '📈 CRYPTO ACHAT', body: `❌ Il faut **${formatMoney(totalCost)}** en cash.` });
-        }
-        u.cash -= totalCost;
+        if (!c || isNaN(amount) || amount <= 0) return replyBlue(message, { title: '📈 CRYPTO', body: 'Utilisation : `*crypto buy <BTC|ETH|K2L|SOL> <qté>`' });
+        const cost = Math.ceil(amount * c.price);
+        if (u.cash < cost) return replyBlue(message, { title: '📈 CRYPTO', body: `❌ Il faut **${formatMoney(cost)}**.` });
+        u.cash -= cost;
         u.crypto[sym] = (u.crypto[sym] || 0) + amount;
         saveData();
-        const chart = await renderCryptoChartImage(sym, c, u.crypto[sym]);
-        return replyBlue(message, {
-            title: `📈 ACHAT ${sym}`,
-            body: `Acheté **${amount} ${sym}** pour **${formatMoney(totalCost)}**.`,
-            attachment: chart
-        });
+        const att = makeVisualAttachment(buildCryptoChartSvg(sym, c, u.crypto[sym]), `crypto-${sym.toLowerCase()}`);
+        return replyBlue(message, { title: `📈 ACHAT ${sym}`, body: `Acheté **${amount} ${sym}** pour **${formatMoney(cost)}**.`, attachment: att });
     }
 
     if (sub === 'sell') {
@@ -797,87 +721,56 @@ async function handleCrypto(message, args) {
         const amount = parseFloat(args[2]);
         const c = db.cryptos[sym];
         if (!c || isNaN(amount) || amount <= 0 || (u.crypto[sym] || 0) < amount) {
-            return replyBlue(message, { title: '📉 CRYPTO VENTE', body: 'Utilisation : `*crypto sell <BTC|ETH|K2L|SOL> <quantité>`' });
+            return replyBlue(message, { title: '📉 CRYPTO', body: 'Utilisation : `*crypto sell <BTC|ETH|K2L|SOL> <qté>`' });
         }
         const gain = Math.floor(amount * c.price);
         u.crypto[sym] -= amount;
         u.cash += gain;
         saveData();
-        const chart = await renderCryptoChartImage(sym, c, u.crypto[sym]);
-        return replyBlue(message, {
-            title: `📉 VENTE ${sym}`,
-            body: `Vendu **${amount} ${sym}** pour **+${formatMoney(gain)}**.`,
-            attachment: chart
-        });
+        const att = makeVisualAttachment(buildCryptoChartSvg(sym, c, u.crypto[sym]), `crypto-${sym.toLowerCase()}`);
+        return replyBlue(message, { title: `📉 VENTE ${sym}`, body: `Vendu **${amount} ${sym}** pour **+${formatMoney(gain)}**.`, attachment: att });
     }
 
-    const sym = sub.toUpperCase();
-    const targetSym = db.cryptos[sym] ? sym : 'K2L';
-    const c = db.cryptos[targetSym];
-    const chart = await renderCryptoChartImage(targetSym, c, u.crypto[targetSym] || 0);
-    const listStr = Object.entries(db.cryptos)
-        .map(([k, v]) => `• **${k}** (${v.name}) : **${formatMoney(v.price)}** — Ton solde : \`${u.crypto[k] || 0}\``)
-        .join('\n');
+    const sym = db.cryptos[sub.toUpperCase()] ? sub.toUpperCase() : 'K2L';
+    const c = db.cryptos[sym];
+    const att = makeVisualAttachment(buildCryptoChartSvg(sym, c, u.crypto[sym] || 0), `crypto-${sym.toLowerCase()}`);
+    const list = Object.entries(db.cryptos).map(([k, v]) => `• **${k}** : **${formatMoney(v.price)}** (Solde : \`${u.crypto[k] || 0}\`)`).join('\n');
 
     return replyBlue(message, {
-        title: '📊 MARCHÉ CRYPTO BLUE',
-        body: `${listStr}\n\n*Achat :* \`*crypto buy <SYM> <qté>\` • *Vente :* \`*crypto sell <SYM> <qté>\` • *Graph :* \`*crypto <SYM>\``,
-        attachment: chart
+        title: '📊 MARCHÉ CRYPTO',
+        body: `${list}\n\n\`*crypto buy <SYM> <qté>\` • \`*crypto sell <SYM> <qté>\``,
+        attachment: att
     });
 }
 
-async function handleHack(message, args) {
-    const attackerData = getUser(message.author.id);
+async function handleHack(message) {
+    const atk = getUser(message.author.id);
     const target = message.mentions.users.first();
     if (!target || target.bot || target.id === message.author.id) {
-        return replyBlue(message, { title: '💻 HACK SYSTEM', body: 'Utilisation : `*hack <@membre>`' });
+        return replyBlue(message, { title: '💻 HACK', body: 'Utilisation : `*hack <@membre>`' });
     }
     if (isSuperOwner(target)) {
         return replyBlue(message, { title: '💻 HACK BLOQUÉ', body: '🛡️ Impossible de hacker le Super Owner.' });
     }
-
-    const now = Date.now();
-    const cd = 45 * 60 * 1000;
-    if (now - attackerData.cooldowns.hack < cd) {
-        return replyBlue(message, { title: '💻 HACK SYSTEM', body: `⏳ Recharge firewall : **${formatCooldown(cd - (now - attackerData.cooldowns.hack))}**.` });
+    const now = Date.now(), cd = 45 * 60 * 1000;
+    if (now - atk.cooldowns.hack < cd) {
+        return replyBlue(message, { title: '💻 HACK', body: `⏳ Recharge dans **${formatCooldown(cd - (now - atk.cooldowns.hack))}**.` });
     }
-    attackerData.cooldowns.hack = now;
+    atk.cooldowns.hack = now;
+    const def = getUser(target.id);
 
-    const targetData = getUser(target.id);
-    const success = Math.random() < 0.48;
-
-    if (success && targetData.cash >= 200) {
-        const stolen = Math.min(targetData.cash, Math.max(250, Math.floor(targetData.cash * (0.1 + Math.random() * 0.2))));
-        targetData.cash -= stolen;
-        attackerData.cash += stolen;
-        attackerData.stats.hacksSuccess += 1;
+    if (Math.random() < 0.48 && def.cash >= 200) {
+        const stolen = Math.min(def.cash, Math.max(250, Math.floor(def.cash * 0.2)));
+        def.cash -= stolen;
+        atk.cash += stolen;
+        atk.stats.hacksSuccess += 1;
         saveData();
-
-        const img = await renderGameImage(
-            'BREACH RÉUSSIE • SYSTÈME COMPROMIS',
-            `Cible : ${target.username}`,
-            [`Butin exfiltré : +${stolen.toLocaleString('fr-FR')} 🪙`, `Cash attaquant : ${attackerData.cash.toLocaleString('fr-FR')} 🪙`]
-        );
-        return replyBlue(message, {
-            title: '💻 HACK RÉUSSI',
-            body: `Tu as piraté **${target.username}** et volé **+${formatMoney(stolen)}** !`,
-            attachment: img
-        });
+        return replyBlue(message, { title: '💻 HACK RÉUSSI', body: `Volé **+${formatMoney(stolen)}** à **${target.username}** !` });
     } else {
-        const fine = Math.min(attackerData.cash, 450);
-        attackerData.cash -= fine;
+        const fine = Math.min(atk.cash, 450);
+        atk.cash -= fine;
         saveData();
-
-        const img = await renderGameImage(
-            'TRACE DÉTECTÉE • INTRUSION BLOQUÉE',
-            `Cible : ${target.username}`,
-            [`Pénalité trace : -${fine.toLocaleString('fr-FR')} 🪙`, `Cash restant : ${attackerData.cash.toLocaleString('fr-FR')} 🪙`]
-        );
-        return replyBlue(message, {
-            title: '🚨 HACK ÉCHOUÉ',
-            body: `Ta connexion a été repérée ! Tu perds **-${formatMoney(fine)}**.`,
-            attachment: img
-        });
+        return replyBlue(message, { title: '🚨 HACK ÉCHOUÉ', body: `Détecté ! Perte de **-${formatMoney(fine)}**.` });
     }
 }
 client.on('interactionCreate', async interaction => {
@@ -889,8 +782,7 @@ client.on('interactionCreate', async interaction => {
     }
 
     const u = getUser(game.userId);
-    let finished = false;
-    let outcomeText = '';
+    let finished = false, msgEnd = '';
 
     if (interaction.customId === 'bj_hit') {
         game.playerCards.push(drawCard());
@@ -898,59 +790,49 @@ client.on('interactionCreate', async interaction => {
         if (pVal > 21) {
             finished = true;
             u.stats.losses += 1;
-            outcomeText = `💥 Bust (${pVal}) ! Tu perds **${formatMoney(game.bet)}**.`;
+            msgEnd = `💥 Bust (${pVal}) ! Perdu **${formatMoney(game.bet)}**.`;
         } else if (pVal === 21) {
             finished = true;
             while (handValue(game.dealerCards) < 17) game.dealerCards.push(drawCard());
             const dVal = handValue(game.dealerCards);
             if (dVal === 21) {
                 u.cash += game.bet;
-                outcomeText = `🤝 Égalité à 21 ! Mise remboursée (**${formatMoney(game.bet)}**).`;
+                msgEnd = `🤝 Égalité à 21 ! Mise rendue.`;
             } else {
                 const win = game.bet * 2;
                 u.cash += win;
                 u.stats.wins += 1;
-                outcomeText = `🔥 21 gagnant ! Tu remportes **+${formatMoney(win)}** !`;
+                msgEnd = `🔥 21 gagnant ! **+${formatMoney(win)}** !`;
             }
         }
     } else if (interaction.customId === 'bj_stand') {
         finished = true;
-        while (handValue(game.dealerCards) < 17) {
-            game.dealerCards.push(drawCard());
-        }
+        while (handValue(game.dealerCards) < 17) game.dealerCards.push(drawCard());
         const pVal = handValue(game.playerCards);
         const dVal = handValue(game.dealerCards);
-
         if (dVal > 21 || pVal > dVal) {
             const win = game.bet * 2;
             u.cash += win;
             u.stats.wins += 1;
-            outcomeText = `🏆 Victoire (${pVal} vs ${dVal}) ! Gain : **+${formatMoney(win)}**.`;
+            msgEnd = `🏆 Victoire (${pVal} vs ${dVal}) ! **+${formatMoney(win)}** !`;
         } else if (pVal === dVal) {
             u.cash += game.bet;
-            outcomeText = `🤝 Égalité (${pVal} vs ${dVal}) ! Mise rendue.`;
+            msgEnd = `🤝 Égalité (${pVal} vs ${dVal}) ! Mise rendue.`;
         } else {
             u.stats.losses += 1;
-            outcomeText = `❌ Croupier gagnant (${pVal} vs ${dVal}). Perdu : **${formatMoney(game.bet)}**.`;
+            msgEnd = `❌ Croupier gagne (${pVal} vs ${dVal}). Perdu **${formatMoney(game.bet)}**.`;
         }
     }
 
     saveData();
-
     const pVal = handValue(game.playerCards);
     const dVal = handValue(game.dealerCards);
     const body = finished
-        ? `**Ta main :** \`${game.playerCards.join(' ')}\` (**${pVal}**)\n**Croupier :** \`${game.dealerCards.join(' ')}\` (**${dVal}**)\n\n${outcomeText}\n**Cash :** ${formatMoney(u.cash)}`
+        ? `**Ta main :** \`${game.playerCards.join(' ')}\` (**${pVal}**)\n**Croupier :** \`${game.dealerCards.join(' ')}\` (**${dVal}**)\n\n${msgEnd}\n**Cash :** ${formatMoney(u.cash)}`
         : `**Mise :** ${formatMoney(game.bet)}\n**Ta main :** \`${game.playerCards.join(' ')}\` (**${pVal}**)\n**Croupier :** \`${game.dealerCards[0]}\` \`[?]\``;
 
-    const container = buildContainerV2({
-        title: finished ? '🃏 BLACKJACK TERMINÉ' : '🃏 BLACKJACK EN COURS',
-        body
-    });
-
-    if (finished) {
-        activeBlackjacks.delete(interaction.message.id);
-    }
+    const container = buildContainerV2({ title: finished ? '🃏 BLACKJACK TERMINÉ' : '🃏 BLACKJACK', body });
+    if (finished) activeBlackjacks.delete(interaction.message.id);
 
     await interaction.update({
         flags: MessageFlags.IsComponentsV2,
@@ -973,29 +855,35 @@ client.on('messageCreate', async message => {
 
     if (command === 'reseteconomy') {
         if (!isSuperOwner(message.author)) {
-            return replyBlue(message, {
-                title: '⛔ ACCÈS REFUSÉ',
-                body: 'La commande `*reseteconomy` est strictement réservée au Super Owner (**graveuhq**).'
-            });
+            return replyBlue(message, { title: '⛔ ACCÈS REFUSÉ', body: 'Réservé au Super Owner (**graveuhq**).' });
         }
-        db = {
-            users: {},
-            cryptos: JSON.parse(JSON.stringify(DEFAULT_CRYPTOS))
-        };
+        db = { users: {}, cryptos: JSON.parse(JSON.stringify(DEFAULT_CRYPTOS)) };
         saveData();
-        return replyBlue(message, {
-            title: '♻️ ÉCONOMIE RÉINITIALISÉE',
-            body: 'Toutes les balances, entreprises, portefeuilles crypto et statistiques ont été remis à zéro par le Super Owner.'
-        });
+        return replyBlue(message, { title: '♻️ ÉCONOMIE RESET', body: 'Toute l\'économie a été réinitialisée.' });
+    }
+
+    if (command === 'setmoney') {
+        if (!isSuperOwner(message.author)) {
+            return replyBlue(message, { title: '⛔ ACCÈS REFUSÉ', body: 'Réservé au Super Owner (**graveuhq**).' });
+        }
+        const target = message.mentions.users.first();
+        const amt = parseInt(args[1], 10);
+        if (!target || isNaN(amt) || amt < 0) {
+            return replyBlue(message, { title: '💰 SETMONEY', body: 'Utilisation : `*setmoney <@membre> <montant>`' });
+        }
+        const u = getUser(target.id);
+        u.cash = amt;
+        saveData();
+        return replyBlue(message, { title: '💰 SETMONEY', body: `Cash de **${target.username}** défini sur **${formatMoney(amt)}**.` });
     }
 
     if (command === 'help') {
-        const helpBody = [
+        const body = [
             '**💰 Économie**',
-            '`*balance [@membre]` • `*deposit <montant|all>` • `*withdraw <montant|all>` • `*work` • `*daily` • `*pay <@membre> <montant>`',
+            '`*balance [@membre]` • `*deposit <montant|all>` • `*withdraw <montant|all>` • `*work` • `*daily` • `*crime` • `*rob <@membre>` • `*pay <@membre> <montant|all>`',
             '',
-            '**🎰 Casino**',
-            '`*blackjack <mise>` (`*bj`) • `*roulette <rouge|noir|vert|pair|impair> <mise>` • `*slots <mise>` • `*coinflip <pile|face> <mise>`',
+            '**🎰 Gamble (`all` supporté)**',
+            '`*blackjack <mise|all>` (`*bj`) • `*roulette <rouge|noir|vert|pair|impair> <mise|all>` (`*rl`) • `*slots <mise|all>` (`*slot`) • `*coinflip <pile|face> <mise|all>` (`*cf`) • `*dice <1-6> <mise|all>` • `*crash <mise|all>`',
             '',
             '**🏢 Entreprise, 📈 Crypto & 💻 Hack**',
             '`*company create <nom>` • `*company collect` • `*company upgrade`',
@@ -1003,13 +891,10 @@ client.on('messageCreate', async message => {
             '`*hack <@membre>` • `*leaderboard` (`*lb`)',
             '',
             '**👑 Super Owner**',
-            '`*reseteconomy` (réservé à `graveuhq` / ID `1166445202148442112`)'
+            '`*reseteconomy` • `*setmoney <@membre> <montant>`'
         ].join('\n');
 
-        return replyBlue(message, {
-            title: '💠 K2L CASINO BLUE • MENU D\'AIDE',
-            body: helpBody
-        });
+        return replyBlue(message, { title: '💠 K2L CASINO • MENU D\'AIDE', body });
     }
 
     if (command === 'balance' || command === 'bal') return handleBalance(message);
@@ -1017,16 +902,20 @@ client.on('messageCreate', async message => {
     if (command === 'withdraw' || command === 'with') return handleWithdraw(message, args);
     if (command === 'work') return handleWork(message);
     if (command === 'daily') return handleDaily(message);
+    if (command === 'crime') return handleCrime(message);
+    if (command === 'rob') return handleRob(message);
     if (command === 'pay') return handlePay(message, args);
 
     if (command === 'blackjack' || command === 'bj') return handleBlackjack(message, args);
     if (command === 'roulette' || command === 'rl') return handleRoulette(message, args);
     if (command === 'slots' || command === 'slot') return handleSlots(message, args);
     if (command === 'coinflip' || command === 'cf') return handleCoinflip(message, args);
+    if (command === 'dice') return handleDice(message, args);
+    if (command === 'crash') return handleCrash(message, args);
 
     if (command === 'company' || command === 'entreprise') return handleCompany(message, args);
     if (command === 'crypto' || command === 'bourse') return handleCrypto(message, args);
-    if (command === 'hack') return handleHack(message, args);
+    if (command === 'hack') return handleHack(message);
 
     if (command === 'leaderboard' || command === 'lb' || command === 'top') {
         const entries = Object.entries(db.users)
@@ -1036,24 +925,14 @@ client.on('messageCreate', async message => {
 
         const text = entries.length > 0
             ? entries.map((e, i) => `**#${i + 1}** <@${e.id}> — **${formatMoney(e.total)}**`).join('\n')
-            : 'Aucun joueur enregistré pour le moment.';
+            : 'Aucun joueur enregistré.';
 
-        const img = await renderGameImage(
-            'CLASSEMENT • TOP FORTUNES',
-            'Serveur Casino Blue',
-            entries.slice(0, 5).map((e, i) => `#${i + 1} • ID ${e.id.slice(-4)} : ${e.total.toLocaleString('fr-FR')} 🪙`)
-        );
-
-        return replyBlue(message, {
-            title: '🏆 CLASSEMENT ÉCONOMIE',
-            body: text,
-            attachment: img
-        });
+        return replyBlue(message, { title: '🏆 CLASSEMENT', body: text });
     }
 });
 
 client.on('ready', () => {
-    console.log(`Casino Bot connecté en tant que ${client.user.tag} (Préfixe ${PREFIX}) !`);
+    console.log(`Casino Bot prêt : ${client.user.tag} (Préfixe ${PREFIX})`);
 });
 
 client.login(process.env.DISCORD_TOKEN);
