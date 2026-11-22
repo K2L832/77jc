@@ -894,7 +894,7 @@ client.on('messageCreate', async message => {
             '`*reseteconomy` • `*setmoney <@membre> <montant>`'
         ].join('\n');
 
-        return replyBlue(message, { title: '💠 K2L CASINO • MENU D\'AIDE', body });
+        return replyBlue(message, { title: '💠 KUZO CASINO • MENU D\'AIDE', body });
     }
 
     if (command === 'balance' || command === 'bal') return handleBalance(message);
