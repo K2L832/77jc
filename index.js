@@ -1,4 +1,4 @@
-// Build Revision: Kuzo-Casino-v3.0 (Prefix: *)
+// Build Revision: Kuzo-Casino-v4.0-Smooth (Prefix: *)
 const {
     Client,
     GatewayIntentBits,
@@ -20,7 +20,7 @@ const zlib = require('zlib');
 const PORT = process.env.PORT || 3001;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Kuzo Casino v3.0 Active!\n');
+    res.end('Kuzo Casino v4.0 Active!\n');
 }).listen(PORT, '0.0.0.0', () => console.log(`HTTP Kuzo Casino actif sur ${PORT}`));
 
 const client = new Client({
@@ -127,8 +127,8 @@ function formatCooldown(ms) {
     return `${s}s`;
 }
 
-// --- Police bitmap 5x7 ASCII nette pour écrire directement dans l'image PNG ---
-const FONT_5X7 = {
+// --- Police lissée 5x7 avec adoucissement des bords (anti-aliasing léger) ---
+const GLYPHS = {
     'A': ['01110','10001','10001','11111','10001','10001','10001'],
     'B': ['11110','10001','10001','11110','10001','10001','11110'],
     'C': ['01111','10000','10000','10000','10000','10000','01111'],
@@ -184,8 +184,8 @@ const FONT_5X7 = {
     ' ': ['00000','00000','00000','00000','00000','00000','00000']
 };
 
-function normalizeAscii(str) {
-    return String(str || '')
+function cleanLabel(s) {
+    return String(s || '')
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
         .toUpperCase()
@@ -217,7 +217,7 @@ function makeChunk(type, data) {
     return Buffer.concat([len, typeBuf, data, crcBuf]);
 }
 
-class KuzoPng {
+class SmoothKuzoCanvas {
     constructor(w, h) {
         this.w = w;
         this.h = h;
@@ -228,7 +228,7 @@ class KuzoPng {
         const ix = Math.round(x), iy = Math.round(y);
         if (ix < 0 || iy < 0 || ix >= this.w || iy >= this.h) return;
         const idx = (iy * this.w + ix) * 4;
-        const al = a / 255;
+        const al = Math.max(0, Math.min(1, a / 255));
         if (al >= 0.999) {
             this.buf[idx] = r; this.buf[idx + 1] = g; this.buf[idx + 2] = b; this.buf[idx + 3] = 255;
         } else {
@@ -236,79 +236,149 @@ class KuzoPng {
             this.buf[idx] = Math.min(255, Math.round(r * al + this.buf[idx] * inv));
             this.buf[idx + 1] = Math.min(255, Math.round(g * al + this.buf[idx + 1] * inv));
             this.buf[idx + 2] = Math.min(255, Math.round(b * al + this.buf[idx + 2] * inv));
-            this.buf[idx + 3] = Math.max(this.buf[idx + 3], a);
+            this.buf[idx + 3] = Math.max(this.buf[idx + 3], Math.round(a));
         }
     }
 
-    rect(x, y, w, h, r, g, b, a = 255) {
-        const x0 = Math.max(0, Math.floor(x)), y0 = Math.max(0, Math.floor(y));
-        const x1 = Math.min(this.w - 1, Math.floor(x + w)), y1 = Math.min(this.h - 1, Math.floor(y + h));
-        for (let py = y0; py <= y1; py++) for (let px = x0; px <= x1; px++) this.px(px, py, r, g, b, a);
+    // Rectangle à coins arrondis avec bord lissé
+    roundRect(x, y, w, h, rad, r, g, b, a = 255) {
+        const maxR = Math.min(rad, w / 2, h / 2);
+        const x0 = Math.max(0, Math.floor(x));
+        const y0 = Math.max(0, Math.floor(y));
+        const x1 = Math.min(this.w - 1, Math.ceil(x + w));
+        const y1 = Math.min(this.h - 1, Math.ceil(y + h));
+
+        for (let py = y0; py <= y1; py++) {
+            for (let px = x0; px <= x1; px++) {
+                let cx = px;
+                if (px < x + maxR) cx = x + maxR;
+                else if (px > x + w - maxR) cx = x + w - maxR;
+
+                let cy = py;
+                if (py < y + maxR) cy = y + maxR;
+                else if (py > y + h - maxR) cy = y + h - maxR;
+
+                const dist = Math.hypot(px - cx, py - cy);
+                if (dist <= maxR) {
+                    const edge = maxR - dist;
+                    const alpha = edge < 1.2 ? a * Math.max(0, edge / 1.2) : a;
+                    this.px(px, py, r, g, b, alpha);
+                }
+            }
+        }
     }
 
-    border(x, y, w, h, t, r, g, b, a = 255) {
-        this.rect(x, y, w, t, r, g, b, a);
-        this.rect(x, y + h - t, w, t, r, g, b, a);
-        this.rect(x, y, t, h, r, g, b, a);
-        this.rect(x + w - t, y, t, h, r, g, b, a);
+    // Contour arrondi propre
+    roundBorder(x, y, w, h, rad, thickness, r, g, b, a = 255) {
+        const maxR = Math.min(rad, w / 2, h / 2);
+        const innerR = Math.max(0, maxR - thickness);
+        const x0 = Math.max(0, Math.floor(x - 1));
+        const y0 = Math.max(0, Math.floor(y - 1));
+        const x1 = Math.min(this.w - 1, Math.ceil(x + w + 1));
+        const y1 = Math.min(this.h - 1, Math.ceil(y + h + 1));
+
+        for (let py = y0; py <= y1; py++) {
+            for (let px = x0; px <= x1; px++) {
+                let ocx = px;
+                if (px < x + maxR) ocx = x + maxR;
+                else if (px > x + w - maxR) ocx = x + w - maxR;
+                let ocy = py;
+                if (py < y + maxR) ocy = y + maxR;
+                else if (py > y + h - maxR) ocy = y + h - maxR;
+                const od = Math.hypot(px - ocx, py - ocy);
+
+                const inX = px >= x + thickness && px <= x + w - thickness;
+                const inY = py >= y + thickness && py <= y + h - thickness;
+                let icx = px;
+                if (px < x + thickness + innerR) icx = x + thickness + innerR;
+                else if (px > x + w - thickness - innerR) icx = x + w - thickness - innerR;
+                let icy = py;
+                if (py < y + thickness + innerR) icy = y + thickness + innerR;
+                else if (py > y + h - thickness - innerR) icy = y + h - thickness - innerR;
+                const id = (inX && inY) ? Math.hypot(px - icx, py - icy) : 999;
+
+                if (od <= maxR + 0.6 && id >= innerR - 0.6) {
+                    const outFade = Math.min(1, Math.max(0, (maxR + 0.6 - od) / 1.2));
+                    const inFade = (inX && inY) ? Math.min(1, Math.max(0, (id - (innerR - 0.6)) / 1.2)) : 1;
+                    this.px(px, py, r, g, b, a * Math.min(outFade, inFade));
+                }
+            }
+        }
     }
 
     circle(cx, cy, rad, r, g, b, a = 255) {
-        const r2 = rad * rad;
-        for (let dy = -rad; dy <= rad; dy++) {
-            for (let dx = -rad; dx <= rad; dx++) {
-                if (dx * dx + dy * dy <= r2) this.px(cx + dx, cy + dy, r, g, b, a);
+        const x0 = Math.max(0, Math.floor(cx - rad - 1));
+        const y0 = Math.max(0, Math.floor(cy - rad - 1));
+        const x1 = Math.min(this.w - 1, Math.ceil(cx + rad + 1));
+        const y1 = Math.min(this.h - 1, Math.ceil(cy + rad + 1));
+        for (let py = y0; py <= y1; py++) {
+            for (let px = x0; px <= x1; px++) {
+                const d = Math.hypot(px - cx, py - cy);
+                if (d <= rad + 0.7) {
+                    const fade = Math.min(1, Math.max(0, (rad + 0.7 - d) / 1.4));
+                    this.px(px, py, r, g, b, a * fade);
+                }
             }
         }
     }
 
     line(x0, y0, x1, y1, t, r, g, b, a = 255) {
         const steps = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0), 1);
-        const half = Math.floor(t / 2);
+        const rad = Math.max(1, t / 2);
         for (let i = 0; i <= steps; i++) {
             const p = i / steps;
-            this.rect(x0 + (x1 - x0) * p - half, y0 + (y1 - y0) * p - half, t, t, r, g, b, a);
+            this.circle(x0 + (x1 - x0) * p, y0 + (y1 - y0) * p, rad, r, g, b, a);
         }
     }
 
+    // Texte adouci avec léger halo doux autour des traits
     text(str, x, y, scale, r, g, b, a = 255) {
-        const clean = normalizeAscii(str);
+        const clean = cleanLabel(str);
         const adv = 6 * scale;
         for (let i = 0; i < clean.length; i++) {
-            const glyph = FONT_5X7[clean[i]] || FONT_5X7[' '];
+            const glyph = GLYPHS[clean[i]] || GLYPHS[' '];
             const gx = x + i * adv;
             for (let row = 0; row < 7; row++) {
                 for (let col = 0; col < 5; col++) {
                     if (glyph[row][col] === '1') {
-                        this.rect(gx + col * scale, y + row * scale, scale, scale, r, g, b, a);
+                        const px = gx + col * scale;
+                        const py = y + row * scale;
+                        // Halo doux 1px autour pour lisser les escaliers
+                        this.roundRect(px - 1, py - 1, scale + 2, scale + 2, 1.5, r, g, b, Math.round(a * 0.22));
+                        this.roundRect(px, py, scale, scale, 1.2, r, g, b, a);
                     }
                 }
             }
         }
     }
 
-    blueBg() {
+    blueFrame(accentRgb = [56, 189, 248]) {
+        const [ar, ag, ab] = accentRgb;
         for (let y = 0; y < this.h; y++) {
             const ty = y / this.h;
             for (let x = 0; x < this.w; x++) {
                 const tx = x / this.w;
-                let r = Math.round(4 + tx * 10 + ty * 5);
-                let g = Math.round(16 + tx * 42 + ty * 28);
-                let b = Math.round(52 + tx * 88 + ty * 45);
-                const dx = (x - this.w * 0.85) / (this.w * 0.45);
-                const dy = (y - this.h * 0.15) / (this.h * 0.55);
-                const d = Math.sqrt(dx * dx + dy * dy);
-                if (d < 1) {
-                    const gl = (1 - d) * 0.34;
-                    r = Math.min(255, Math.round(r + 56 * gl));
-                    g = Math.min(255, Math.round(g + 189 * gl));
-                    b = Math.min(255, Math.round(b + 248 * gl));
+                let r = Math.round(6 + tx * 14 + ty * 8);
+                let g = Math.round(22 + tx * 52 + ty * 34);
+                let b = Math.round(64 + tx * 98 + ty * 48);
+
+                const d1 = Math.hypot((x - this.w * 0.85) / (this.w * 0.45), (y - this.h * 0.16) / (this.h * 0.55));
+                if (d1 < 1) {
+                    const f = (1 - d1) * 0.35;
+                    r = Math.min(255, Math.round(r + ar * f));
+                    g = Math.min(255, Math.round(g + ag * f));
+                    b = Math.min(255, Math.round(b + ab * f));
                 }
                 this.px(x, y, r, g, b, 255);
             }
         }
-        this.border(14, 14, this.w - 28, this.h - 28, 3, 56, 189, 248, 220);
-        this.text('KUZO CASINO', 32, 26, 2, 56, 189, 248, 255);
+
+        // Cadre principal bien arrondi + badge Kuzo Casino en haut à gauche
+        this.roundRect(14, 14, this.w - 28, this.h - 28, 24, 10, 32, 76, 185);
+        this.roundBorder(14, 14, this.w - 28, this.h - 28, 24, 3, ar, ag, ab, 225);
+        this.roundRect(30, 24, 174, 28, 12, ar, ag, ab, 55);
+        this.roundBorder(30, 24, 174, 28, 12, 1.5, ar, ag, ab, 210);
+        this.text('KUZO CASINO', 42, 32, 2, 240, 249, 255, 255);
     }
 
     toAttachment(filename) {
@@ -331,195 +401,194 @@ class KuzoPng {
     }
 }
 function renderWalletPng(username, cash, bank, extra = '') {
-    const c = new KuzoPng(720, 280);
-    c.blueBg();
-    c.text(`JOUEUR: ${username}`, 220, 26, 2, 224, 242, 254, 255);
-    c.text('PORTEFEUILLE & BANQUE', 32, 54, 3, 255, 255, 255, 255);
+    const c = new SmoothKuzoCanvas(740, 295);
+    c.blueFrame([56, 189, 248]);
+    c.text(username, 222, 32, 2, 186, 230, 253, 255);
+    c.text('PORTEFEUILLE & BANQUE', 32, 66, 3, 255, 255, 255, 255);
 
-    c.rect(32, 92, 206, 118, 7, 26, 62, 230);
-    c.border(32, 92, 206, 118, 2, 56, 189, 248, 230);
-    c.text('CASH', 46, 106, 2, 125, 211, 252, 255);
-    c.text(`${Math.floor(cash).toLocaleString('fr-FR')} PTS`, 46, 144, 2, 255, 255, 255, 255);
+    const panels = [
+        { title: 'CASH', val: `${Math.floor(cash).toLocaleString('fr-FR')} PTS`, col: [52, 211, 153] },
+        { title: 'BANQUE', val: `${Math.floor(bank).toLocaleString('fr-FR')} PTS`, col: [96, 165, 250] },
+        { title: 'TOTAL', val: `${Math.floor(cash + bank).toLocaleString('fr-FR')} PTS`, col: [34, 211, 238] }
+    ];
 
-    c.rect(256, 92, 206, 118, 7, 26, 62, 230);
-    c.border(256, 92, 206, 118, 2, 96, 165, 250, 230);
-    c.text('BANQUE', 270, 106, 2, 147, 197, 253, 255);
-    c.text(`${Math.floor(bank).toLocaleString('fr-FR')} PTS`, 270, 144, 2, 255, 255, 255, 255);
+    panels.forEach((p, i) => {
+        const px = 32 + i * 228;
+        const py = 112;
+        c.roundRect(px, py, 212, 118, 18, 8, 28, 68, 220);
+        c.roundBorder(px, py, 212, 118, 18, 2.5, p.col[0], p.col[1], p.col[2], 235);
+        c.roundRect(px + 14, py + 96, 184, 8, 4, p.col[0], p.col[1], p.col[2], 210);
+        c.text(p.title, px + 16, py + 18, 2, p.col[0], p.col[1], p.col[2], 255);
+        c.text(p.val, px + 16, py + 52, 2, 255, 255, 255, 255);
+    });
 
-    c.rect(480, 92, 208, 118, 7, 26, 62, 230);
-    c.border(480, 92, 208, 118, 2, 34, 211, 238, 230);
-    c.text('TOTAL', 494, 106, 2, 103, 232, 249, 255);
-    c.text(`${Math.floor(cash + bank).toLocaleString('fr-FR')} PTS`, 494, 144, 2, 255, 255, 255, 255);
-
-    c.text(extra || 'KUZO BANK SYSTEM', 32, 232, 2, 186, 230, 253, 255);
+    c.text(extra || 'KUZO BANK', 32, 248, 2, 186, 230, 253, 255);
     return c.toAttachment('kuzo-wallet.png');
 }
 
 function renderBlackjackPng(username, bet, pCards, pVal, dCards, dVal, statusText) {
-    const c = new KuzoPng(720, 300);
-    c.blueBg();
-    c.text(`BLACKJACK - ${username}`, 220, 26, 2, 224, 242, 254, 255);
-    c.text(`MISE: ${bet.toLocaleString('fr-FR')} PTS`, 32, 54, 3, 255, 255, 255, 255);
+    const c = new SmoothKuzoCanvas(740, 310);
+    c.blueFrame([56, 189, 248]);
+    c.text(`${username} - MISE ${bet.toLocaleString('fr-FR')}`, 222, 32, 2, 186, 230, 253, 255);
+    c.text('BLACKJACK TABLE', 32, 66, 3, 255, 255, 255, 255);
 
-    // Cartes joueur
-    c.text(`TA MAIN (${pVal})`, 32, 96, 2, 125, 211, 252, 255);
+    c.text(`TOI (${pVal})`, 32, 112, 2, 52, 211, 153, 255);
     pCards.slice(0, 5).forEach((card, i) => {
         const cx = 32 + i * 74;
-        c.rect(cx, 118, 62, 82, 240, 249, 255, 255);
-        c.border(cx, 118, 62, 82, 2, 14, 165, 233, 255);
-        c.text(card, cx + 8, 148, 2, 8, 30, 68, 255);
+        c.roundRect(cx, 134, 62, 86, 12, 240, 249, 255, 255);
+        c.roundBorder(cx, 134, 62, 86, 12, 2.5, 56, 189, 248, 255);
+        c.text(card, cx + 10, 168, 2, 10, 32, 72, 255);
     });
 
-    // Cartes croupier
-    c.text(`CROUPIER (${dVal})`, 430, 96, 2, 125, 211, 252, 255);
+    c.text(`CROUPIER (${dVal})`, 436, 112, 2, 251, 191, 36, 255);
     dCards.slice(0, 4).forEach((card, i) => {
-        const cx = 430 + i * 66;
-        c.rect(cx, 118, 56, 82, 15, 45, 95, 255);
-        c.border(cx, 118, 56, 82, 2, 125, 211, 252, 255);
-        c.text(card, cx + 7, 148, 2, 224, 242, 254, 255);
+        const cx = 436 + i * 68;
+        c.roundRect(cx, 134, 58, 86, 12, 16, 48, 102, 255);
+        c.roundBorder(cx, 134, 58, 86, 12, 2.5, 251, 191, 36, 240);
+        c.text(card, cx + 9, 168, 2, 254, 243, 199, 255);
     });
 
-    c.text(statusText, 32, 235, 2, 255, 255, 255, 255);
+    c.roundRect(32, 242, 676, 36, 12, 8, 28, 68, 220);
+    c.text(statusText, 46, 252, 2, 255, 255, 255, 255);
     return c.toAttachment('kuzo-blackjack.png');
 }
 
 function renderRoulettePng(username, num, color, bet, statusText) {
-    const c = new KuzoPng(720, 280);
-    c.blueBg();
-    c.text(`ROULETTE - ${username}`, 220, 26, 2, 224, 242, 254, 255);
-    c.text(`NUMERO ${num} (${color.toUpperCase()})`, 32, 54, 3, 255, 255, 255, 255);
+    const accent = color === 'rouge' ? [248, 113, 113] : color === 'vert' ? [52, 211, 153] : [96, 165, 250];
+    const c = new SmoothKuzoCanvas(740, 295);
+    c.blueFrame(accent);
+    c.text(username, 222, 32, 2, 186, 230, 253, 255);
+    c.text(`ROULETTE - ${num} (${color.toUpperCase()})`, 32, 66, 3, 255, 255, 255, 255);
 
-    // Roue visuelle à gauche
-    c.circle(130, 160, 68, 12, 38, 82, 255);
-    c.circle(130, 160, 52, 56, 189, 248, 255);
-    c.circle(130, 160, 28, 6, 20, 48, 255);
-    c.text(`${num}`, 116, 150, 3, 255, 255, 255, 255);
+    c.circle(132, 174, 70, accent[0], accent[1], accent[2], 235);
+    c.circle(132, 174, 54, 8, 26, 62, 255);
+    c.text(`${num}`, 114, 162, 3, 255, 255, 255, 255);
 
-    c.rect(235, 98, 450, 114, 7, 26, 62, 230);
-    c.border(235, 98, 450, 114, 2, 56, 189, 248, 230);
-    c.text(`MISE: ${bet.toLocaleString('fr-FR')} PTS`, 255, 116, 2, 125, 211, 252, 255);
-    c.text(statusText, 255, 156, 2, 255, 255, 255, 255);
-
+    c.roundRect(236, 112, 470, 124, 18, 8, 28, 68, 220);
+    c.roundBorder(236, 112, 470, 124, 18, 2.5, accent[0], accent[1], accent[2], 230);
+    c.text(`MISE: ${bet.toLocaleString('fr-FR')} PTS`, 256, 134, 2, 186, 230, 253, 255);
+    c.text(statusText, 256, 176, 2, 255, 255, 255, 255);
     return c.toAttachment('kuzo-roulette.png');
 }
 
 function renderSlotsPng(username, reels, bet, statusText) {
-    const c = new KuzoPng(720, 280);
-    c.blueBg();
-    c.text(`SLOTS - ${username}`, 220, 26, 2, 224, 242, 254, 255);
-    c.text(`MISE: ${bet.toLocaleString('fr-FR')} PTS`, 32, 54, 3, 255, 255, 255, 255);
+    const c = new SmoothKuzoCanvas(740, 295);
+    c.blueFrame([167, 139, 250]);
+    c.text(username, 222, 32, 2, 186, 230, 253, 255);
+    c.text(`SLOTS - MISE ${bet.toLocaleString('fr-FR')}`, 32, 66, 3, 255, 255, 255, 255);
 
-    const labels = reels.map(sym => {
-        if (sym === '💎') return 'GEM';
-        if (sym === '💠') return 'BLU';
-        if (sym === '🪙') return 'COI';
-        if (sym === '⚡') return 'ZAP';
-        return 'HOT';
+    const mapLabel = { '💎': 'GEM', '💠': 'BLU', '🪙': 'COI', '⚡': 'ZAP', '🔥': 'HOT' };
+    const colors = [[56, 189, 248], [52, 211, 153], [251, 191, 36]];
+
+    reels.forEach((sym, i) => {
+        const rx = 56 + i * 218;
+        const col = colors[i % colors.length];
+        c.roundRect(rx, 110, 192, 112, 18, 8, 28, 68, 230);
+        c.roundBorder(rx, 110, 192, 112, 18, 2.5, col[0], col[1], col[2], 240);
+        c.text(mapLabel[sym] || 'WIN', rx + 58, 152, 3, 255, 255, 255, 255);
     });
 
-    labels.forEach((lbl, i) => {
-        const rx = 56 + i * 165;
-        c.rect(rx, 96, 136, 104, 8, 30, 72, 240);
-        c.border(rx, 96, 136, 104, 3, 56, 189, 248, 255);
-        c.text(lbl, rx + 34, 134, 3, 224, 242, 254, 255);
-    });
-
-    c.text(statusText, 32, 228, 2, 255, 255, 255, 255);
+    c.text(statusText, 32, 246, 2, 224, 242, 254, 255);
     return c.toAttachment('kuzo-slots.png');
 }
+function renderActionCardPng(badge, username, headline, subline, accentRgb = [56, 189, 248]) {
+    const c = new SmoothKuzoCanvas(740, 265);
+    c.blueFrame(accentRgb);
+    c.text(`${badge} - ${username}`, 222, 32, 2, 186, 230, 253, 255);
+    c.text(headline, 32, 68, 3, 255, 255, 255, 255);
 
-function renderSmallGamePng(gameName, username, line1, line2) {
-    const c = new KuzoPng(720, 250);
-    c.blueBg();
-    c.text(`${gameName} - ${username}`, 220, 26, 2, 224, 242, 254, 255);
-    c.text(line1, 32, 62, 3, 255, 255, 255, 255);
-    c.rect(32, 112, 656, 86, 7, 26, 62, 230);
-    c.border(32, 112, 656, 86, 2, 56, 189, 248, 230);
-    c.text(line2, 50, 144, 2, 186, 230, 253, 255);
-    return c.toAttachment('kuzo-game.png');
+    c.roundRect(32, 116, 676, 102, 18, 8, 28, 68, 220);
+    c.roundBorder(32, 116, 676, 102, 18, 2.5, accentRgb[0], accentRgb[1], accentRgb[2], 235);
+    c.text(subline, 52, 154, 2, 224, 242, 254, 255);
+    return c.toAttachment('kuzo-action.png');
 }
-function renderCompanyPng(username, comp, pending) {
-    const c = new KuzoPng(720, 300);
-    c.blueBg();
-    c.text(`ENTREPRISE - ${username}`, 220, 26, 2, 224, 242, 254, 255);
-    c.text(`${comp.name} (NIV.${comp.level})`, 32, 54, 3, 255, 255, 255, 255);
 
-    c.rect(28, 222, 664, 4, 56, 189, 248, 220);
+function renderCompanyPng(username, comp, pending) {
+    const c = new SmoothKuzoCanvas(740, 310);
+    c.blueFrame([52, 211, 153]);
+    c.text(username, 222, 32, 2, 186, 230, 253, 255);
+    c.text(`${comp.name} (NIV.${comp.level})`, 32, 66, 3, 255, 255, 255, 255);
+
+    c.roundRect(28, 232, 684, 5, 2, 52, 211, 153, 220);
     const count = Math.min(5, Math.max(1, comp.level));
-    const slotW = 620 / count;
+    const slotW = 640 / count;
     for (let i = 0; i < count; i++) {
-        const bw = Math.min(96, Math.floor(slotW * 0.7));
+        const bw = Math.min(96, Math.floor(slotW * 0.72));
         const bx = Math.round(50 + i * slotW + (slotW - bw) / 2);
-        const bh = Math.round(58 + ((i + comp.level) % 4) * 18);
-        const by = 222 - bh;
-        c.rect(bx, by, bw, bh, 12, 42, 98, 240);
-        c.border(bx, by, bw, bh, 2, 56, 189, 248, 255);
-        for (let wy = by + 10; wy < 210; wy += 16) {
+        const bh = Math.round(56 + ((i + comp.level) % 4) * 18);
+        const by = 232 - bh;
+        c.roundRect(bx, by, bw, bh, 12, 12, 46, 98, 240);
+        c.roundBorder(bx, by, bw, bh, 12, 2, 56, 189, 248, 255);
+        for (let wy = by + 10; wy < 218; wy += 16) {
             for (let wx = bx + 10; wx < bx + bw - 14; wx += 18) {
-                c.rect(wx, wy, 8, 7, 186, 230, 253, 220);
+                c.roundRect(wx, wy, 8, 7, 2, 186, 230, 253, 225);
             }
         }
     }
 
-    c.text(`REVENU: ${comp.incomePerHour}/H  |  A RECOLTER: ${pending} PTS`, 32, 242, 2, 224, 242, 254, 255);
+    c.text(`${comp.incomePerHour}/H  |  A RECOLTER: ${pending} PTS`, 32, 252, 2, 224, 242, 254, 255);
     return c.toAttachment('kuzo-company.png');
 }
 
 function renderCryptoPng(symbol, name, price, history, userQty) {
-    const c = new KuzoPng(720, 300);
-    c.blueBg();
-    c.text(`${symbol} - ${name}`, 220, 26, 2, 224, 242, 254, 255);
-    c.text(`COURS: ${price.toLocaleString('fr-FR')} PTS`, 32, 54, 3, 255, 255, 255, 255);
+    const c = new SmoothKuzoCanvas(740, 310);
+    c.blueFrame([34, 211, 238]);
+    c.text(`${symbol} - ${name}`, 222, 32, 2, 186, 230, 253, 255);
+    c.text(`COURS: ${price.toLocaleString('fr-FR')} PTS`, 32, 66, 3, 255, 255, 255, 255);
 
-    const gx = 36, gy = 92, gw = 648, gh = 148;
-    c.rect(gx, gy, gw, gh, 5, 18, 44, 235);
-    c.border(gx, gy, gw, gh, 2, 56, 189, 248, 200);
+    const gx = 32, gy = 108, gw = 676, gh = 142;
+    c.roundRect(gx, gy, gw, gh, 16, 6, 22, 54, 235);
+    c.roundBorder(gx, gy, gw, gh, 16, 2, 34, 211, 238, 210);
 
     const vals = history.length > 1 ? history : [price, price];
     const minV = Math.min(...vals), maxV = Math.max(...vals);
     const span = Math.max(1, maxV - minV);
     const pts = vals.map((v, i) => ({
-        x: gx + 18 + (i / (vals.length - 1)) * (gw - 36),
+        x: gx + 20 + (i / (vals.length - 1)) * (gw - 40),
         y: gy + gh - 20 - ((v - minV) / span) * (gh - 40)
     }));
 
     for (let i = 0; i < pts.length - 1; i++) {
-        c.line(pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y, 4, 56, 189, 248, 255);
+        c.line(pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y, 4, 34, 211, 238, 255);
     }
     for (const p of pts) {
-        c.circle(p.x, p.y, 4, 224, 242, 254, 255);
+        c.circle(p.x, p.y, 5, 224, 242, 254, 255);
     }
 
-    c.text(`SOLDE: ${userQty} ${symbol}  |  MIN: ${minV}  MAX: ${maxV}`, 36, 256, 2, 186, 230, 253, 255);
+    c.text(`SOLDE: ${userQty} ${symbol}  |  MIN: ${minV}  MAX: ${maxV}`, 32, 266, 2, 186, 230, 253, 255);
     return c.toAttachment('kuzo-crypto.png');
 }
 
 function renderHackPng(attackerName, targetName, ok, amount) {
-    const c = new KuzoPng(720, 270);
-    c.blueBg();
-    c.text(`INTRUSION - ${attackerName}`, 220, 26, 2, 224, 242, 254, 255);
-    c.text(ok ? `BREACH REUSSIE: +${amount} PTS` : `TRACE DETECTEE: -${amount} PTS`, 32, 56, 3, 255, 255, 255, 255);
+    const col = ok ? [52, 211, 153] : [248, 113, 113];
+    const c = new SmoothKuzoCanvas(740, 280);
+    c.blueFrame(col);
+    c.text(`HACK - ${attackerName}`, 222, 32, 2, 186, 230, 253, 255);
+    c.text(ok ? `BREACH REUSSIE +${amount}` : `TRACE DETECTEE -${amount}`, 32, 66, 3, 255, 255, 255, 255);
 
-    c.rect(32, 104, 656, 116, 6, 22, 52, 235);
-    c.border(32, 104, 656, 116, 2, ok ? 34 : 248, ok ? 211 : 113, ok ? 238 : 113, 240);
-    c.text(`CIBLE: ${targetName}`, 52, 126, 2, 125, 211, 252, 255);
-    c.text(ok ? `VOL EFFECTUE: ${amount} PTS` : `PENALITE FIREWALL: ${amount} PTS`, 52, 166, 2, 255, 255, 255, 255);
+    c.roundRect(32, 114, 676, 122, 18, 8, 28, 68, 230);
+    c.roundBorder(32, 114, 676, 122, 18, 2.5, col[0], col[1], col[2], 240);
+    c.text(`CIBLE: ${targetName}`, 52, 138, 2, 186, 230, 253, 255);
+    c.text(ok ? `BUTIN VOLE: ${amount} PTS` : `PENALITE: -${amount} PTS`, 52, 182, 2, 255, 255, 255, 255);
     return c.toAttachment('kuzo-hack.png');
 }
 
 function renderLeaderboardPng(entries) {
-    const c = new KuzoPng(720, 320);
-    c.blueBg();
-    c.text('TOP JOUEURS', 220, 26, 2, 224, 242, 254, 255);
-    c.text('CLASSEMENT FORTUNE', 32, 54, 3, 255, 255, 255, 255);
+    const c = new SmoothKuzoCanvas(740, 330);
+    c.blueFrame([251, 191, 36]);
+    c.text('TOP FORTUNES', 222, 32, 2, 254, 243, 199, 255);
+    c.text('CLASSEMENT KUZO', 32, 66, 3, 255, 255, 255, 255);
 
-    const top = entries.slice(0, 6);
+    const top = entries.slice(0, 5);
+    const medals = [[251, 191, 36], [186, 230, 253], [251, 146, 60], [96, 165, 250], [52, 211, 153]];
     if (top.length === 0) {
-        c.text('AUCUN JOUEUR ENREGISTRE', 32, 118, 2, 186, 230, 253, 255);
+        c.text('AUCUN JOUEUR', 32, 130, 2, 186, 230, 253, 255);
     } else {
         top.forEach((e, idx) => {
-            const y = 96 + idx * 34;
-            c.text(`#${idx + 1} ${e.name} - ${Math.floor(e.total).toLocaleString('fr-FR')} PTS`, 32, y, 2, 224, 242, 254, 255);
+            const y = 110 + idx * 38;
+            const col = medals[idx] || [186, 230, 253];
+            c.roundRect(32, y - 4, 676, 30, 10, 8, 28, 68, 190);
+            c.text(`#${idx + 1} ${e.name} - ${Math.floor(e.total).toLocaleString('fr-FR')} PTS`, 46, y + 4, 2, col[0], col[1], col[2], 255);
         });
     }
     return c.toAttachment('kuzo-leaderboard.png');
@@ -538,7 +607,6 @@ function buildContainerV2({ title, body, footer }) {
         );
 }
 
-// Envoie uniquement l'image (sans texte embed) quand attachment est fourni
 async function replyImageOnly(message, attachment, components = []) {
     return message.reply({
         files: [attachment],
@@ -547,40 +615,103 @@ async function replyImageOnly(message, attachment, components = []) {
     });
 }
 
-// Container v2 pour commandes utilitaires / admin / erreurs
-async function replyContainer(message, { title, body, footer }) {
+async function replyContainer(message, { title, body, footer, components = [] }) {
     const container = buildContainerV2({ title, body, footer });
     return message.reply({
         flags: MessageFlags.IsComponentsV2,
-        components: [container],
+        components: [container, ...components],
         allowedMentions: { parse: [] }
     });
+}
+
+function getHelpSection(tab = 'all') {
+    if (tab === 'eco') {
+        return {
+            title: '💠 KUZO CASINO • ÉCONOMIE & BANQUE',
+            body: [
+                '💳 `*balance [@membre]` — Carte cash, banque & total',
+                '🏦 `*deposit <montant|all>` — Déposer en banque',
+                '🏧 `*withdraw <montant|all>` — Retirer en cash',
+                '💼 `*work` • 🎁 `*daily` • 🕵️ `*crime` • 🔫 `*rob <@membre>`',
+                '💸 `*pay <@membre> <montant|all>` — Envoyer des coins'
+            ].join('\n')
+        };
+    }
+    if (tab === 'gamble') {
+        return {
+            title: '🎰 KUZO CASINO • JEUX GAMBLE (`all` OK)',
+            body: [
+                '🃏 `*blackjack <mise|all>` (`*bj`) — Table interactive',
+                '🎡 `*roulette <rouge|noir|vert|pair|impair> <mise|all>` (`*rl`)',
+                '🎰 `*slots <mise|all>` (`*slot`) — 3 rouleaux multiplicateurs',
+                '🪙 `*coinflip <pile|face> <mise|all>` (`*cf`) — x2',
+                '🎲 `*dice <1-6> <mise|all>` — Jackpot x5',
+                '🚀 `*crash <mise|all>` — Multiplicateur & crash'
+            ].join('\n')
+        };
+    }
+    if (tab === 'biz') {
+        return {
+            title: '🏢 KUZO CASINO • ENTREPRISE, CRYPTO & HACK',
+            body: [
+                '🏢 `*company [create <nom>|collect|upgrade]` — Bâtiments & revenus/h',
+                '📈 `*crypto [SYM|buy <SYM> <qté>|sell <SYM> <qté>]` — Graphique live',
+                '💻 `*hack <@membre>` — Intrusion & vol de cash',
+                '🏆 `*leaderboard` (`*lb`) — Classement des pseudos'
+            ].join('\n')
+        };
+    }
+    if (tab === 'owner') {
+        return {
+            title: '👑 KUZO CASINO • SUPER OWNER',
+            body: [
+                '♻️ `*reseteconomy` — Réinitialiser toute l\'économie',
+                '💰 `*setmoney <@membre> <montant>` — Définir le cash d\'un joueur'
+            ].join('\n')
+        };
+    }
+    return {
+        title: '💠 KUZO CASINO • MENU PRINCIPAL',
+        body: [
+            '✨ Clique sur les boutons ci-dessous pour naviguer par catégorie :',
+            '',
+            '💰 **Économie** : `*balance` • `*deposit` • `*withdraw` • `*work` • `*daily` • `*crime` • `*rob` • `*pay`',
+            '🎰 **Gamble (`all` OK)** : `*bj` • `*roulette` • `*slots` • `*coinflip` • `*dice` • `*crash`',
+            '🏢 **Business / Crypto / Hack** : `*company` • `*crypto` • `*hack` • `*lb`',
+            '👑 **Owner** : `*reseteconomy` • `*setmoney`'
+        ].join('\n')
+    };
+}
+
+function helpButtons(activeTab = 'all') {
+    return new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('help_eco').setLabel('Économie').setStyle(activeTab === 'eco' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('help_gamble').setLabel('Gamble').setStyle(activeTab === 'gamble' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('help_biz').setLabel('Business & Crypto').setStyle(activeTab === 'biz' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('help_owner').setLabel('Owner').setStyle(activeTab === 'owner' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+    );
 }
 async function handleBalance(message) {
     const target = message.mentions.users.first() || message.author;
     const u = getUser(target.id, target);
-    const att = renderWalletPng(u.username, u.cash, u.bank, u.company ? `ENTREPRISE: ${u.company.name}` : 'SANS ENTREPRISE');
-    return replyImageOnly(message, att);
+    const extra = u.company ? `ENTREPRISE: ${u.company.name} (NIV.${u.company.level})` : 'AUCUNE ENTREPRISE';
+    return replyImageOnly(message, renderWalletPng(u.username, u.cash, u.bank, extra));
 }
 
 async function handleDeposit(message, args) {
     const u = getUser(message.author.id, message.author);
     const amt = parseBetAmount(args[0], u.cash);
     if (!amt || u.cash < amt) return replyContainer(message, { title: '🏦 DÉPÔT', body: 'Utilisation : `*deposit <montant|all>`' });
-    u.cash -= amt;
-    u.bank += amt;
-    saveData();
-    return replyImageOnly(message, renderWalletPng(u.username, u.cash, u.bank, `DEPOT: +${amt} PTS`));
+    u.cash -= amt; u.bank += amt; saveData();
+    return replyImageOnly(message, renderWalletPng(u.username, u.cash, u.bank, `DEPOT BANQUE: +${amt} PTS`));
 }
 
 async function handleWithdraw(message, args) {
     const u = getUser(message.author.id, message.author);
     const amt = parseBetAmount(args[0], u.bank);
-    if (!amt || u.bank < amt) return replyContainer(message, { title: '🏦 RETRAIT', body: 'Utilisation : `*withdraw <montant|all>`' });
-    u.bank -= amt;
-    u.cash += amt;
-    saveData();
-    return replyImageOnly(message, renderWalletPng(u.username, u.cash, u.bank, `RETRAIT: +${amt} PTS`));
+    if (!amt || u.bank < amt) return replyContainer(message, { title: '🏧 RETRAIT', body: 'Utilisation : `*withdraw <montant|all>`' });
+    u.bank -= amt; u.cash += amt; saveData();
+    return replyImageOnly(message, renderWalletPng(u.username, u.cash, u.bank, `RETRAIT CASH: +${amt} PTS`));
 }
 
 async function handleWork(message) {
@@ -591,9 +722,8 @@ async function handleWork(message) {
     }
     u.cooldowns.work = now;
     const gain = Math.floor(Math.random() * 900) + 450;
-    u.cash += gain;
-    saveData();
-    return replyImageOnly(message, renderSmallGamePng('WORK', u.username, `SALAIRE: +${gain} PTS`, `CASH ACTUEL: ${u.cash} PTS`));
+    u.cash += gain; saveData();
+    return replyImageOnly(message, renderActionCardPng('WORK', u.username, `SALAIRE: +${gain} PTS`, `CASH ACTUEL: ${u.cash.toLocaleString('fr-FR')} PTS`, [52, 211, 153]));
 }
 
 async function handleDaily(message) {
@@ -604,9 +734,8 @@ async function handleDaily(message) {
     }
     u.cooldowns.daily = now;
     const gain = 2500;
-    u.cash += gain;
-    saveData();
-    return replyImageOnly(message, renderSmallGamePng('DAILY', u.username, `BONUS: +${gain} PTS`, `CASH ACTUEL: ${u.cash} PTS`));
+    u.cash += gain; saveData();
+    return replyImageOnly(message, renderActionCardPng('DAILY', u.username, `BONUS: +${gain} PTS`, `CASH ACTUEL: ${u.cash.toLocaleString('fr-FR')} PTS`, [251, 191, 36]));
 }
 
 async function handleCrime(message) {
@@ -620,7 +749,7 @@ async function handleCrime(message) {
     const amt = ok ? Math.floor(Math.random() * 1400) + 600 : Math.min(u.cash, 700);
     if (ok) u.cash += amt; else u.cash -= amt;
     saveData();
-    return replyImageOnly(message, renderSmallGamePng('CRIME', u.username, ok ? `COUP REUSSI: +${amt} PTS` : `AMENDE: -${amt} PTS`, `CASH: ${u.cash} PTS`));
+    return replyImageOnly(message, renderActionCardPng('CRIME', u.username, ok ? `COUP REUSSI +${amt}` : `AMENDE -${amt}`, `CASH: ${u.cash.toLocaleString('fr-FR')} PTS`, ok ? [52, 211, 153] : [248, 113, 113]));
 }
 
 async function handleRob(message) {
@@ -629,21 +758,19 @@ async function handleRob(message) {
     if (!target || target.bot || target.id === message.author.id) {
         return replyContainer(message, { title: '🔫 VOL', body: 'Utilisation : `*rob <@membre>`' });
     }
-    if (isSuperOwner(target)) {
-        return replyContainer(message, { title: '🔫 VOL BLOQUÉ', body: '🛡️ Impossible de voler le Super Owner.' });
-    }
+    if (isSuperOwner(target)) return replyContainer(message, { title: '🔫 VOL BLOQUÉ', body: '🛡️ Impossible de voler le Super Owner.' });
     const now = Date.now(), cd = 35 * 60 * 1000;
     if (now - atk.cooldowns.rob < cd) {
         return replyContainer(message, { title: '🔫 VOL', body: `⏳ Reviens dans **${formatCooldown(cd - (now - atk.cooldowns.rob))}**.` });
     }
     atk.cooldowns.rob = now;
     const def = getUser(target.id, target);
-    if (def.cash < 200) return replyContainer(message, { title: '🔫 VOL', body: '❌ La cible n\'a pas assez de cash.' });
+    if (def.cash < 200) return replyContainer(message, { title: '🔫 VOL', body: '❌ Cible trop pauvre.' });
     const ok = Math.random() < 0.45;
     const amt = ok ? Math.min(def.cash, Math.max(200, Math.floor(def.cash * 0.25))) : Math.min(atk.cash, 500);
     if (ok) { def.cash -= amt; atk.cash += amt; } else { atk.cash -= amt; }
     saveData();
-    return replyImageOnly(message, renderSmallGamePng('ROB', atk.username, ok ? `VOLE ${amt} PTS A ${def.username}` : `RATE: -${amt} PTS`, `CASH: ${atk.cash} PTS`));
+    return replyImageOnly(message, renderActionCardPng('ROB', atk.username, ok ? `VOLE ${amt} A ${def.username}` : `RATE -${amt}`, `CASH: ${atk.cash.toLocaleString('fr-FR')} PTS`, ok ? [52, 211, 153] : [248, 113, 113]));
 }
 
 async function handleCompany(message, args) {
@@ -666,8 +793,7 @@ async function handleCompany(message, args) {
 
     if (sub === 'collect') {
         u.company.lastCollect = Date.now();
-        u.cash += pending;
-        saveData();
+        u.cash += pending; saveData();
         return replyImageOnly(message, renderCompanyPng(u.username, u.company, 0));
     }
 
@@ -677,8 +803,7 @@ async function handleCompany(message, args) {
         u.cash += pending - upCost;
         u.company.level += 1;
         u.company.incomePerHour += 550;
-        u.company.lastCollect = Date.now();
-        saveData();
+        u.company.lastCollect = Date.now(); saveData();
         return replyImageOnly(message, renderCompanyPng(u.username, u.company, 0));
     }
 
@@ -697,8 +822,7 @@ async function handleCrypto(message, args) {
         const cost = Math.ceil(amt * c.price);
         if (u.cash < cost) return replyContainer(message, { title: '📈 CRYPTO', body: `❌ Il faut **${formatMoney(cost)}**.` });
         u.cash -= cost;
-        u.crypto[sym] = (u.crypto[sym] || 0) + amt;
-        saveData();
+        u.crypto[sym] = (u.crypto[sym] || 0) + amt; saveData();
         return replyImageOnly(message, renderCryptoPng(sym, c.name, c.price, c.history, u.crypto[sym]));
     }
 
@@ -706,13 +830,11 @@ async function handleCrypto(message, args) {
         const sym = (args[1] || '').toUpperCase();
         const amt = parseFloat(args[2]);
         const c = db.cryptos[sym];
-        if (!c || isNaN(amt) || amt <= 0 || (u.crypto[sym] || 0) < amount) {
+        if (!c || isNaN(amt) || amt <= 0 || (u.crypto[sym] || 0) < amt) {
             return replyContainer(message, { title: '📉 CRYPTO', body: 'Utilisation : `*crypto sell <BTC|ETH|KZO|SOL> <qté>`' });
         }
         const gain = Math.floor(amt * c.price);
-        u.crypto[sym] -= amt;
-        u.cash += gain;
-        saveData();
+        u.crypto[sym] -= amt; u.cash += gain; saveData();
         return replyImageOnly(message, renderCryptoPng(sym, c.name, c.price, c.history, u.crypto[sym]));
     }
 
@@ -819,7 +941,7 @@ async function handleCoinflip(message, args) {
     const won = out === side;
     if (won) { u.cash += bet * 2; u.stats.wins += 1; } else { u.stats.losses += 1; }
     saveData();
-    return replyImageOnly(message, renderSmallGamePng('COINFLIP', u.username, `PIECE: ${out.toUpperCase()}`, won ? `GAGNE: +${bet * 2} PTS` : `PERDU: -${bet} PTS`));
+    return replyImageOnly(message, renderActionCardPng('COINFLIP', u.username, `PIECE: ${out.toUpperCase()}`, won ? `GAGNE: +${bet * 2} PTS` : `PERDU: -${bet} PTS`, won ? [52, 211, 153] : [248, 113, 113]));
 }
 
 async function handleDice(message, args) {
@@ -832,7 +954,7 @@ async function handleDice(message, args) {
     const won = roll === guess;
     if (won) { u.cash += bet * 5; u.stats.wins += 1; } else { u.stats.losses += 1; }
     saveData();
-    return replyImageOnly(message, renderSmallGamePng('DICE', u.username, `DE: ${roll} (CHOIX ${guess})`, won ? `GAGNE: +${bet * 5} PTS` : `PERDU: -${bet} PTS`));
+    return replyImageOnly(message, renderActionCardPng('DICE', u.username, `DE: ${roll} (CHOIX ${guess})`, won ? `JACKPOT X5: +${bet * 5} PTS` : `PERDU: -${bet} PTS`, won ? [251, 191, 36] : [96, 165, 250]));
 }
 
 async function handleCrash(message, args) {
@@ -846,11 +968,22 @@ async function handleCrash(message, args) {
     const pay = won ? Math.floor(bet * targetMult) : 0;
     if (won) { u.cash += pay; u.stats.wins += 1; } else { u.stats.losses += 1; }
     saveData();
-    return replyImageOnly(message, renderSmallGamePng('CRASH', u.username, `X${targetMult} VS CRASH X${crashAt}`, won ? `ENCAISSE: +${pay} PTS` : `CRASH: -${bet} PTS`));
+    return replyImageOnly(message, renderActionCardPng('CRASH', u.username, `X${targetMult} VS CRASH X${crashAt}`, won ? `ENCAISSE: +${pay} PTS` : `CRASH: -${bet} PTS`, won ? [34, 211, 238] : [248, 113, 113]));
 }
 
 client.on('interactionCreate', async interaction => {
     if (!interaction.isButton()) return;
+
+    if (interaction.customId.startsWith('help_')) {
+        const tab = interaction.customId.replace('help_', '');
+        const sec = getHelpSection(tab);
+        const container = buildContainerV2({ title: sec.title, body: sec.body });
+        return interaction.update({
+            flags: MessageFlags.IsComponentsV2,
+            components: [container, helpButtons(tab)]
+        }).catch(() => {});
+    }
+
     const game = activeBlackjacks.get(interaction.message.id);
     if (!game || interaction.user.id !== game.userId) return;
     const u = getUser(game.userId, interaction.user);
@@ -912,15 +1045,8 @@ client.on('messageCreate', async message => {
         return replyContainer(message, { title: '💸 PAY', body: `Envoyé **${formatMoney(amt)}** à **${r.username}**.` });
     }
     if (cmd === 'help') {
-        return replyContainer(message, {
-            title: '💠 KUZO CASINO • AIDE',
-            body: [
-                '**Économie :** `*balance` • `*deposit <all|n>` • `*withdraw <all|n>` • `*work` • `*daily` • `*crime` • `*rob <@m>` • `*pay <@m> <all|n>`',
-                '**Gamble (`all` OK) :** `*bj <all|n>` • `*roulette <rouge|noir|vert|pair|impair> <all|n>` • `*slots <all|n>` • `*coinflip <pile|face> <all|n>` • `*dice <1-6> <all|n>` • `*crash <all|n>`',
-                '**Business / Crypto / Hack :** `*company [create|collect|upgrade]` • `*crypto [SYM|buy|sell]` • `*hack <@m>` • `*lb`',
-                '**Owner :** `*reseteconomy` • `*setmoney <@m> <n>`'
-            ].join('\n')
-        });
+        const sec = getHelpSection('all');
+        return replyContainer(message, { title: sec.title, body: sec.body, components: [helpButtons('all')] });
     }
 
     if (cmd === 'balance' || cmd === 'bal') return handleBalance(message);
@@ -947,5 +1073,5 @@ client.on('messageCreate', async message => {
     }
 });
 
-client.on('ready', () => console.log(`Kuzo Casino prêt : ${client.user.tag}`));
+client.on('ready', () => console.log(`Kuzo Casino v4.0 prêt : ${client.user.tag}`));
 client.login(process.env.DISCORD_TOKEN);
