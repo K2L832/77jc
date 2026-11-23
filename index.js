@@ -10,7 +10,8 @@ const {
     ContainerBuilder,
     TextDisplayBuilder,
     SeparatorBuilder,
-    SeparatorSpacingSize
+    SeparatorSpacingSize,
+    ChannelType
 } = require('discord.js');
 const http = require('http');
 const fs = require('fs');
@@ -48,7 +49,11 @@ const DEFAULT_CRYPTOS = {
     SOL: { name: 'Solana', price: 215, history: [185, 192, 189, 201, 208, 215] }
 };
 
-let db = { users: {}, cryptos: JSON.parse(JSON.stringify(DEFAULT_CRYPTOS)) };
+let db = {
+    users: {},
+    cryptos: JSON.parse(JSON.stringify(DEFAULT_CRYPTOS)),
+    casinoCategories: {}
+};
 
 function isSuperOwner(user) {
     if (!user) return false;
@@ -76,6 +81,9 @@ function loadData() {
             db.cryptos = parsed.cryptos && Object.keys(parsed.cryptos).length > 0
                 ? parsed.cryptos
                 : JSON.parse(JSON.stringify(DEFAULT_CRYPTOS));
+            db.casinoCategories = parsed.casinoCategories && typeof parsed.casinoCategories === 'object'
+                ? parsed.casinoCategories
+                : {};
         }
     } catch (e) {
         console.error('Erreur chargement:', e.message);
@@ -83,6 +91,42 @@ function loadData() {
 }
 
 loadData();
+
+function getGuildCasinoCategory(guildId) {
+    if (!guildId || !db.casinoCategories) return null;
+    return db.casinoCategories[guildId] || null;
+}
+
+function setGuildCasinoCategory(guildId, categoryId) {
+    if (!db.casinoCategories || typeof db.casinoCategories !== 'object') {
+        db.casinoCategories = {};
+    }
+    if (!categoryId) {
+        delete db.casinoCategories[guildId];
+    } else {
+        db.casinoCategories[guildId] = categoryId;
+    }
+    saveData();
+}
+
+function isAllowedCasinoChannel(message) {
+    if (!message.guild || !message.channel) return false;
+    const allowedCatId = getGuildCasinoCategory(message.guild.id);
+    if (!allowedCatId) return true;
+    return message.channel.parentId === allowedCatId;
+}
+
+async function resolveCategoryIdFromInput(message, rawArg) {
+    const cleaned = (rawArg || '').replace(/[<#>]/g, '').trim();
+    if (cleaned) {
+        const fetched = await message.guild.channels.fetch(cleaned).catch(() => null);
+        if (fetched) {
+            if (fetched.type === ChannelType.GuildCategory) return fetched.id;
+            if (fetched.parentId) return fetched.parentId;
+        }
+    }
+    return message.channel.parentId || null;
+}
 
 function getUser(userId, discordUser = null) {
     if (!db.users[userId]) {
@@ -126,7 +170,6 @@ function formatCooldown(ms) {
     if (m > 0) return `${m}m ${s}s`;
     return `${s}s`;
 }
-
 // --- Glyphes 7x9 adoucis (plus fins et plus naturels que 5x7) ---
 const GLYPHS_7X9 = {
     'A': ['0011100','0100010','1000001','1000001','1111111','1000001','1000001','1000001','1000001'],
@@ -659,6 +702,7 @@ function getHelpSection(tab = 'all') {
         return {
             title: '👑 KUZO CASINO • SUPER OWNER',
             body: [
+                '🎰 `*setcasino <id_catégorie|off>` — Restreindre le bot à une catégorie',
                 '♻️ `*reseteconomy` — Réinitialiser toute l\'économie',
                 '💰 `*setmoney <@membre> <montant>` — Définir le cash en `$`'
             ].join('\n')
@@ -672,7 +716,7 @@ function getHelpSection(tab = 'all') {
             '💰 **Économie** : `*balance` • `*deposit` • `*withdraw` • `*work` • `*daily` • `*crime` • `*rob` • `*pay`',
             '🎰 **Gamble (`all` OK)** : `*bj` • `*roulette` • `*slots` • `*coinflip` • `*dice` • `*crash`',
             '🏢 **Business / Crypto / Hack** : `*company` • `*crypto` • `*hack` • `*lb`',
-            '👑 **Owner** : `*reseteconomy` • `*setmoney`'
+            '👑 **Owner** : `*setcasino` • `*reseteconomy` • `*setmoney`'
         ].join('\n')
     };
 }
@@ -933,7 +977,6 @@ async function handleCrash(message, args) {
     saveData();
     return replyImageOnly(message, renderActionPng('CRASH', u.username, `X${targetMult} VS CRASH X${crashAt}`, won ? `ENCAISSE: +${pay.toLocaleString('fr-FR')} $` : `CRASH: -${bet.toLocaleString('fr-FR')} $`, won ? [34, 211, 238] : [248, 113, 113]));
 }
-
 client.on('interactionCreate', async interaction => {
     if (!interaction.isButton()) return;
     if (interaction.customId.startsWith('help_')) {
@@ -973,13 +1016,37 @@ client.on('interactionCreate', async interaction => {
 
 client.on('messageCreate', async message => {
     if (!message.author || message.author.bot || !message.guild || !message.content.startsWith(PREFIX)) return;
-    getUser(message.author.id, message.author);
     const args = message.content.slice(PREFIX.length).trim().split(/ +/);
     const cmd = (args.shift() || '').toLowerCase();
 
+    if (cmd === 'setcasino' || cmd === 'casinochannel') {
+        if (!isSuperOwner(message.author)) {
+            return replyContainer(message, { title: '⛔ ACCÈS REFUSÉ', body: 'Réservé au Super Owner (**graveuhq**).' });
+        }
+        const sub = (args[0] || '').toLowerCase();
+        if (sub === 'off' || sub === 'reset' || sub === 'clear') {
+            setGuildCasinoCategory(message.guild.id, null);
+            return replyContainer(message, { title: '🔓 RESTRICTION DÉSACTIVÉE', body: 'Le bot casino fonctionne désormais dans tous les salons du serveur.' });
+        }
+        const categoryId = await resolveCategoryIdFromInput(message, args[0]);
+        if (!categoryId) {
+            return replyContainer(message, { title: '❌ CATÉGORIE INTROUVABLE', body: 'Indique l\'ID d\'une catégorie (`*setcasino <ID_CATÉGORIE>`) ou lance la commande depuis un salon d\'une catégorie.' });
+        }
+        const catChannel = await message.guild.channels.fetch(categoryId).catch(() => null);
+        setGuildCasinoCategory(message.guild.id, categoryId);
+        return replyContainer(message, {
+            title: '🎰 CATÉGORIE CASINO CONFIGURÉE',
+            body: `Le bot répond uniquement dans la catégorie **${catChannel ? catChannel.name : categoryId}** et ses salons inclus.`
+        });
+    }
+
+    if (!isAllowedCasinoChannel(message)) return;
+
+    getUser(message.author.id, message.author);
+
     if (cmd === 'reseteconomy') {
         if (!isSuperOwner(message.author)) return replyContainer(message, { title: '⛔ ACCÈS REFUSÉ', body: 'Réservé au Super Owner (**graveuhq**).' });
-        db = { users: {}, cryptos: JSON.parse(JSON.stringify(DEFAULT_CRYPTOS)) };
+        db = { users: {}, cryptos: JSON.parse(JSON.stringify(DEFAULT_CRYPTOS)), casinoCategories: db.casinoCategories || {} };
         saveData();
         return replyContainer(message, { title: '♻️ RESET OK', body: 'Économie réinitialisée.' });
     }
