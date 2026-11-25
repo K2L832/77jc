@@ -1,4 +1,4 @@
-// Build Revision: Kyuro-Casino-v6.2-Auctions (Prefix: *)
+// Build Revision: Kyuro-Casino-v6.3-CustomVisuals (Prefix: *)
 const {
     Client,
     GatewayIntentBits,
@@ -20,7 +20,6 @@ const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
-const zlib = require('zlib');
 
 let NapiCanvas = null;
 try {
@@ -32,7 +31,7 @@ try {
 const PORT = process.env.PORT || 3001;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-    res.end('Kyuro Casino v6.2 OK\n');
+    res.end('Kyuro Casino v6.3 OK\n');
 }).listen(PORT, '0.0.0.0', () => console.log(`HTTP actif sur le port ${PORT}`));
 
 const client = new Client({
@@ -54,12 +53,11 @@ const DATA_FILE = path.join(DATA_DIR, 'kyuro-casino-data.json');
 const activeBlackjacks = new Map();
 const activeDuels = new Map();
 const activeAuctions = new Map();
-
 const BUILDINGS_CATALOG = {
-    studio: { id: 'studio', name: 'Kyuro Loft', price: 6500, rentPerResident: 110, maxResidents: 4, tier: 1 },
-    residence: { id: 'residence', name: 'Tour Azur', price: 16500, rentPerResident: 260, maxResidents: 8, tier: 2 },
-    penthouse: { id: 'penthouse', name: 'Skyline Tower', price: 38000, rentPerResident: 580, maxResidents: 12, tier: 3 },
-    citadel: { id: 'citadel', name: 'Kyuro Citadel', price: 85000, rentPerResident: 1250, maxResidents: 20, tier: 4 }
+    studio: { id: 'studio', name: 'Kyuro Loft', price: 8500, rentPerResident: 65, maxResidents: 4, tier: 1 },
+    residence: { id: 'residence', name: 'Tour Azur', price: 22000, rentPerResident: 150, maxResidents: 8, tier: 2 },
+    penthouse: { id: 'penthouse', name: 'Skyline Tower', price: 50000, rentPerResident: 320, maxResidents: 12, tier: 3 },
+    citadel: { id: 'citadel', name: 'Kyuro Citadel', price: 110000, rentPerResident: 680, maxResidents: 20, tier: 4 }
 };
 
 const DEFAULT_CRYPTOS = {
@@ -74,7 +72,7 @@ let db = {
     cryptos: JSON.parse(JSON.stringify(DEFAULT_CRYPTOS)),
     casinoCategories: {},
     owners: [],
-    lotteryPot: 10000
+    lotteryPot: 2500
 };
 
 function isSuperOwner(user) {
@@ -115,7 +113,7 @@ function loadData() {
                 ? parsed.casinoCategories
                 : {};
             db.owners = Array.isArray(parsed.owners) ? parsed.owners : [];
-            db.lotteryPot = typeof parsed.lotteryPot === 'number' ? parsed.lotteryPot : 10000;
+            db.lotteryPot = typeof parsed.lotteryPot === 'number' ? parsed.lotteryPot : 2500;
         }
     } catch (e) {
         console.error('Erreur chargement:', e.message);
@@ -123,7 +121,6 @@ function loadData() {
 }
 
 loadData();
-
 function getGuildCasinoCategory(guildId) {
     if (!guildId || !db.casinoCategories) return null;
     return db.casinoCategories[guildId] || null;
@@ -162,8 +159,8 @@ function getUser(userId, discordUser = null) {
         db.users[userId] = {
             username: discordUser ? (discordUser.globalName || discordUser.username) : `Joueur_${userId.slice(-4)}`,
             avatarUrl: discordUser ? discordUser.displayAvatarURL({ extension: 'png', size: 128 }) : null,
-            cash: 1500,
-            bank: 500,
+            cash: 0,
+            bank: 0,
             crypto: { BTC: 0, ETH: 0, KYR: 0, SOL: 0 },
             buildings: [],
             homeBuildingOwnerId: null,
@@ -178,6 +175,8 @@ function getUser(userId, discordUser = null) {
         u.avatarUrl = discordUser.displayAvatarURL({ extension: 'png', size: 128 });
     }
     if (!u.username) u.username = `Joueur_${userId.slice(-4)}`;
+    if (typeof u.cash !== 'number') u.cash = 0;
+    if (typeof u.bank !== 'number') u.bank = 0;
     if (!u.crypto) u.crypto = { BTC: 0, ETH: 0, KYR: 0, SOL: 0 };
     if (!Array.isArray(u.buildings)) u.buildings = [];
     if (!u.stats) u.stats = { wins: 0, losses: 0, wagered: 0, hacksSuccess: 0 };
@@ -251,33 +250,39 @@ async function loadAvatarImage(avatarUrl) {
     }
 }
 
+function applyTextGradient(ctx, x0, y0, x1, y1, c1 = '#ffffff', c2 = '#7dd3fc', c3 = '#38bdf8') {
+    const g = ctx.createLinearGradient(x0, y0, x1, y1);
+    g.addColorStop(0, c1);
+    g.addColorStop(0.55, c2);
+    g.addColorStop(1, c3);
+    return g;
+}
+
 function drawBlueThemeFrame(ctx, w, h, badgeText, pseudoText) {
-    // Dégradé bleu profond multicouche
     const bgGrad = ctx.createLinearGradient(0, 0, w, h);
-    bgGrad.addColorStop(0, '#040e1f');
-    bgGrad.addColorStop(0.45, '#081f44');
-    bgGrad.addColorStop(0.82, '#0d346b');
-    bgGrad.addColorStop(1, '#11478c');
+    bgGrad.addColorStop(0, '#030b1a');
+    bgGrad.addColorStop(0.45, '#071d40');
+    bgGrad.addColorStop(0.85, '#0b3266');
+    bgGrad.addColorStop(1, '#10468c');
     ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, w, h);
 
-    const glowTop = ctx.createRadialGradient(w * 0.86, h * 0.14, 12, w * 0.86, h * 0.14, w * 0.48);
+    const glowTop = ctx.createRadialGradient(w * 0.85, h * 0.14, 10, w * 0.85, h * 0.14, w * 0.48);
     glowTop.addColorStop(0, 'rgba(125, 211, 252, 0.28)');
-    glowTop.addColorStop(0.5, 'rgba(56, 189, 248, 0.11)');
+    glowTop.addColorStop(0.55, 'rgba(56, 189, 248, 0.11)');
     glowTop.addColorStop(1, 'rgba(56, 189, 248, 0)');
     ctx.fillStyle = glowTop;
     ctx.fillRect(0, 0, w, h);
 
-    const glowBottom = ctx.createRadialGradient(w * 0.16, h * 0.92, 10, w * 0.16, h * 0.92, w * 0.42);
-    glowBottom.addColorStop(0, 'rgba(37, 99, 235, 0.24)');
-    glowBottom.addColorStop(1, 'rgba(37, 99, 235, 0)');
+    const glowBottom = ctx.createRadialGradient(w * 0.15, h * 0.9, 10, w * 0.15, h * 0.9, w * 0.42);
+    glowBottom.addColorStop(0, 'rgba(59, 130, 246, 0.24)');
+    glowBottom.addColorStop(1, 'rgba(59, 130, 246, 0)');
     ctx.fillStyle = glowBottom;
     ctx.fillRect(0, 0, w, h);
 
-    // Carte arrondie intérieure avec dégradé subtilement sombre/bleu
     const cardGrad = ctx.createLinearGradient(18, 18, w - 18, h - 18);
-    cardGrad.addColorStop(0, 'rgba(7, 22, 49, 0.92)');
-    cardGrad.addColorStop(1, 'rgba(11, 35, 76, 0.90)');
+    cardGrad.addColorStop(0, 'rgba(6, 20, 45, 0.93)');
+    cardGrad.addColorStop(1, 'rgba(10, 33, 73, 0.91)');
 
     ctx.save();
     ctx.beginPath();
@@ -285,11 +290,10 @@ function drawBlueThemeFrame(ctx, w, h, badgeText, pseudoText) {
     ctx.fillStyle = cardGrad;
     ctx.fill();
     ctx.lineWidth = 2.2;
-    ctx.strokeStyle = 'rgba(125, 211, 252, 0.55)';
+    ctx.strokeStyle = 'rgba(125, 211, 252, 0.58)';
     ctx.stroke();
     ctx.restore();
 
-    // Badge dynamique adapté à la largeur exacte du texte
     ctx.save();
     ctx.font = '700 17px Sans, Arial, sans-serif';
     const badgeMetrics = ctx.measureText(badgeText);
@@ -299,24 +303,24 @@ function drawBlueThemeFrame(ctx, w, h, badgeText, pseudoText) {
     const badgeY = 34;
 
     const badgeGrad = ctx.createLinearGradient(badgeX, badgeY, badgeX + badgeW, badgeY + badgeH);
-    badgeGrad.addColorStop(0, 'rgba(14, 165, 233, 0.34)');
-    badgeGrad.addColorStop(1, 'rgba(37, 99, 235, 0.24)');
+    badgeGrad.addColorStop(0, 'rgba(14, 165, 233, 0.36)');
+    badgeGrad.addColorStop(1, 'rgba(37, 99, 235, 0.25)');
 
     ctx.beginPath();
     ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 12);
     ctx.fillStyle = badgeGrad;
     ctx.fill();
     ctx.lineWidth = 1.6;
-    ctx.strokeStyle = 'rgba(125, 211, 252, 0.78)';
+    ctx.strokeStyle = 'rgba(125, 211, 252, 0.8)';
     ctx.stroke();
 
-    ctx.fillStyle = '#f0f9ff';
+    ctx.fillStyle = applyTextGradient(ctx, badgeX, badgeY, badgeX + badgeW, badgeY + badgeH, '#ffffff', '#e0f2fe', '#7dd3fc');
     ctx.textBaseline = 'middle';
     ctx.fillText(badgeText, badgeX + 17, badgeY + badgeH / 2 + 1);
 
     if (pseudoText) {
         ctx.font = '600 19px Sans, Arial, sans-serif';
-        ctx.fillStyle = '#bae6fd';
+        ctx.fillStyle = applyTextGradient(ctx, w - 220, badgeY, w - 42, badgeY + badgeH, '#f0f9ff', '#bae6fd', '#7dd3fc');
         ctx.textAlign = 'right';
         ctx.fillText(pseudoText, w - 42, badgeY + badgeH / 2 + 1);
     }
@@ -327,7 +331,7 @@ function drawRoundedAvatar(ctx, avatarImg, cx, cy, radius) {
     ctx.save();
     ctx.beginPath();
     ctx.arc(cx, cy, radius + 3.5, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(125, 211, 252, 0.9)';
+    ctx.fillStyle = 'rgba(125, 211, 252, 0.92)';
     ctx.fill();
 
     ctx.beginPath();
@@ -348,38 +352,46 @@ function drawRoundedAvatar(ctx, avatarImg, cx, cy, radius) {
     }
     ctx.restore();
 }
+
+function drawDieFace(ctx, x, y, size, val) {
+    const g = ctx.createLinearGradient(x, y, x + size, y + size);
+    g.addColorStop(0, '#143d7d');
+    g.addColorStop(1, '#0b2249');
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(x, y, size, size, 22);
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = '#7dd3fc';
+    ctx.stroke();
+
+    const cx = x + size / 2;
+    const cy = y + size / 2;
+    const off = size * 0.25;
+    const r = Math.max(7, size * 0.085);
+    const pipMap = {
+        1: [[cx, cy]],
+        2: [[cx - off, cy - off], [cx + off, cy + off]],
+        3: [[cx - off, cy - off], [cx, cy], [cx + off, cy + off]],
+        4: [[cx - off, cy - off], [cx + off, cy - off], [cx - off, cy + off], [cx + off, cy + off]],
+        5: [[cx - off, cy - off], [cx + off, cy - off], [cx, cy], [cx - off, cy + off], [cx + off, cy + off]],
+        6: [[cx - off, cy - off], [cx + off, cy - off], [cx - off, cy], [cx + off, cy], [cx - off, cy + off], [cx + off, cy + off]]
+    };
+    const pips = pipMap[val] || pipMap[1];
+    ctx.fillStyle = applyTextGradient(ctx, x, y, x + size, y + size, '#ffffff', '#e0f2fe', '#38bdf8');
+    for (const [px, py] of pips) {
+        ctx.beginPath();
+        ctx.arc(px, py, r, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.restore();
+}
 async function createCleanBlueCard(w, h, badgeText, pseudoText, avatarUrl, drawBodyFn, filename) {
     if (!NapiCanvas) {
-        const raw = Buffer.alloc((w * 4 + 1) * h);
-        for (let y = 0; y < h; y++) {
-            const rs = y * (w * 4 + 1);
-            raw[rs] = 0;
-            for (let x = 0; x < w; x++) {
-                const idx = rs + 1 + x * 4;
-                raw[idx] = 10; raw[idx + 1] = 36; raw[idx + 2] = 78; raw[idx + 3] = 255;
-            }
-        }
-        const comp = zlib.deflateSync(raw, { level: 6 });
-        const ihdr = Buffer.alloc(13);
-        ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 6;
-        const crc32 = (buf) => {
-            let c = 0xffffffff;
-            for (let i = 0; i < buf.length; i++) {
-                c = (c ^ buf[i]) >>> 0;
-                for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
-            }
-            return (c ^ 0xffffffff) >>> 0;
-        };
-        const mk = (t, d) => {
-            const l = Buffer.alloc(4); l.writeUInt32BE(d.length, 0);
-            const tb = Buffer.from(t, 'ascii');
-            const cb = Buffer.alloc(4); cb.writeUInt32BE(crc32(Buffer.concat([tb, d])), 0);
-            return Buffer.concat([l, tb, d, cb]);
-        };
-        const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
-        return new AttachmentBuilder(Buffer.concat([sig, mk('IHDR', ihdr), mk('IDAT', comp), mk('IEND', Buffer.alloc(0))]), { name: filename });
+        return new AttachmentBuilder(Buffer.from(''), { name: filename });
     }
-
     const canvas = NapiCanvas.createCanvas(w, h);
     const ctx = canvas.getContext('2d');
     const avatarImg = await loadAvatarImage(avatarUrl);
@@ -392,7 +404,7 @@ async function createCleanBlueCard(w, h, badgeText, pseudoText, avatarUrl, drawB
 async function renderWalletBluePng(userObj, extra = '') {
     return createCleanBlueCard(960, 420, 'KYURO BANK', userObj.username, userObj.avatarUrl, async (ctx, av) => {
         drawRoundedAvatar(ctx, av, 72, 128, 36);
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = applyTextGradient(ctx, 126, 95, 520, 130, '#ffffff', '#e0f2fe', '#7dd3fc');
         ctx.font = '700 30px Sans, Arial, sans-serif';
         ctx.fillText('PORTEFEUILLE & BANQUE', 126, 118);
         ctx.fillStyle = '#7dd3fc';
@@ -417,14 +429,14 @@ async function renderWalletBluePng(userObj, extra = '') {
             ctx.fillStyle = boxGrad;
             ctx.fill();
             ctx.lineWidth = 1.6;
-            ctx.strokeStyle = 'rgba(125, 211, 252, 0.5)';
+            ctx.strokeStyle = 'rgba(125, 211, 252, 0.52)';
             ctx.stroke();
 
             ctx.fillStyle = '#7dd3fc';
             ctx.font = '700 15px Sans, Arial, sans-serif';
             ctx.fillText(b.title, x + 22, y + 38);
 
-            ctx.fillStyle = '#ffffff';
+            ctx.fillStyle = applyTextGradient(ctx, x + 22, y + 75, x + 250, y + 115, '#ffffff', '#bae6fd', '#38bdf8');
             ctx.font = '700 31px Sans, Arial, sans-serif';
             ctx.fillText(b.val, x + 22, y + 98);
         });
@@ -435,7 +447,7 @@ async function renderMonopolyBluePng(userObj, pendingRent, residentsCount, maxRe
     return createCleanBlueCard(960, 430, 'KYURO MONOPOLY', userObj.username, userObj.avatarUrl, async (ctx, av) => {
         drawRoundedAvatar(ctx, av, 72, 128, 34);
         const bCount = (userObj.buildings || []).length;
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = applyTextGradient(ctx, 124, 100, 820, 130, '#ffffff', '#e0f2fe', '#7dd3fc');
         ctx.font = '700 28px Sans, Arial, sans-serif';
         ctx.fillText(`IMMEUBLES : ${bCount}  •  HABITANTS : ${residentsCount}/${maxResidentsCount}`, 124, 122);
         ctx.fillStyle = '#7dd3fc';
@@ -484,7 +496,7 @@ async function renderMonopolyBluePng(userObj, pendingRent, residentsCount, maxRe
 async function renderCryptoBluePng(userObj, symbol, name, price, history, userQty) {
     return createCleanBlueCard(960, 430, `KYURO CRYPTO • ${symbol}`, userObj.username, userObj.avatarUrl, async (ctx, av) => {
         drawRoundedAvatar(ctx, av, 72, 122, 30);
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = applyTextGradient(ctx, 118, 98, 700, 130, '#ffffff', '#e0f2fe', '#7dd3fc');
         ctx.font = '700 28px Sans, Arial, sans-serif';
         ctx.fillText(`${name} — ${price.toLocaleString('fr-FR')} $`, 118, 120);
         ctx.fillStyle = '#7dd3fc';
@@ -525,10 +537,265 @@ async function renderCryptoBluePng(userObj, symbol, name, price, history, userQt
         ctx.fillText(`MIN : ${minV.toLocaleString('fr-FR')} $   •   MAX : ${maxV.toLocaleString('fr-FR')} $`, 38, 378);
     }, 'kyuro-crypto.png');
 }
+async function renderSlotsBluePng(userObj, reels, bet, statusText) {
+    return createCleanBlueCard(960, 430, 'KYURO SLOTS', `${userObj.username} • ${bet.toLocaleString('fr-FR')} $`, userObj.avatarUrl, async (ctx, av) => {
+        drawRoundedAvatar(ctx, av, 72, 114, 28);
+        ctx.fillStyle = applyTextGradient(ctx, 114, 96, 860, 128, '#ffffff', '#bae6fd', '#38bdf8');
+        ctx.font = '700 26px Sans, Arial, sans-serif';
+        ctx.fillText(statusText, 114, 122);
+
+        // Châssis de machine à sous stylisé avec levier
+        const cabX = 38, cabY = 158, cabW = 836, cabH = 224;
+        const cabGrad = ctx.createLinearGradient(cabX, cabY, cabX, cabY + cabH);
+        cabGrad.addColorStop(0, '#102e61');
+        cabGrad.addColorStop(1, '#081a38');
+        ctx.beginPath();
+        ctx.roundRect(cabX, cabY, cabW, cabH, 22);
+        ctx.fillStyle = cabGrad;
+        ctx.fill();
+        ctx.lineWidth = 2.2;
+        ctx.strokeStyle = '#7dd3fc';
+        ctx.stroke();
+
+        // Levier droit de machine
+        ctx.fillStyle = '#38bdf8';
+        ctx.beginPath();
+        ctx.roundRect(cabX + cabW + 10, cabY + 52, 14, 116, 7);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(cabX + cabW + 17, cabY + 46, 16, 0, Math.PI * 2);
+        ctx.fillStyle = '#e0f2fe';
+        ctx.fill();
+
+        const labels = { '💎': 'GEM', '💠': 'KYR', '🪙': 'USD', '⚡': 'VOLT', '🔥': 'FIRE' };
+        reels.forEach((sym, i) => {
+            const rx = cabX + 26 + i * 268;
+            const ry = cabY + 26;
+            const rw = 248;
+            const rh = 172;
+            const reelGrad = ctx.createLinearGradient(rx, ry, rx, ry + rh);
+            reelGrad.addColorStop(0, '#091f44');
+            reelGrad.addColorStop(0.5, '#123875');
+            reelGrad.addColorStop(1, '#091f44');
+
+            ctx.beginPath();
+            ctx.roundRect(rx, ry, rw, rh, 16);
+            ctx.fillStyle = reelGrad;
+            ctx.fill();
+            ctx.lineWidth = 1.8;
+            ctx.strokeStyle = 'rgba(125, 211, 252, 0.72)';
+            ctx.stroke();
+
+            ctx.fillStyle = applyTextGradient(ctx, rx, ry, rx + rw, ry + rh, '#ffffff', '#e0f2fe', '#38bdf8');
+            ctx.font = '700 38px Sans, Arial, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(labels[sym] || 'WIN', rx + rw / 2, ry + rh / 2 + 2);
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'alphabetic';
+        });
+    }, 'kyuro-slots.png');
+}
+
+async function renderDiceBluePng(userObj, roll, guess, bet, statusText) {
+    return createCleanBlueCard(960, 420, 'KYURO DICE', `${userObj.username} • ${bet.toLocaleString('fr-FR')} $`, userObj.avatarUrl, async (ctx, av) => {
+        drawRoundedAvatar(ctx, av, 72, 120, 30);
+        ctx.fillStyle = applyTextGradient(ctx, 118, 98, 860, 130, '#ffffff', '#bae6fd', '#38bdf8');
+        ctx.font = '700 27px Sans, Arial, sans-serif';
+        ctx.fillText(statusText, 118, 128);
+
+        drawDieFace(ctx, 56, 174, 172, roll);
+        drawDieFace(ctx, 254, 174, 172, guess);
+
+        ctx.fillStyle = '#7dd3fc';
+        ctx.font = '700 16px Sans, Arial, sans-serif';
+        ctx.fillText('RÉSULTAT DÉ', 56, 368);
+        ctx.fillText('TON CHOIX', 254, 368);
+
+        const boxGrad = ctx.createLinearGradient(458, 174, 458, 346);
+        boxGrad.addColorStop(0, 'rgba(14, 43, 94, 0.94)');
+        boxGrad.addColorStop(1, 'rgba(9, 27, 62, 0.94)');
+        ctx.beginPath();
+        ctx.roundRect(458, 174, 464, 172, 20);
+        ctx.fillStyle = boxGrad;
+        ctx.fill();
+        ctx.lineWidth = 1.6;
+        ctx.strokeStyle = 'rgba(125, 211, 252, 0.55)';
+        ctx.stroke();
+
+        ctx.fillStyle = '#7dd3fc';
+        ctx.font = '700 18px Sans, Arial, sans-serif';
+        ctx.fillText(`DÉ TIRÉ : ${roll}   |   CHOIX : ${guess}`, 484, 224);
+
+        ctx.fillStyle = applyTextGradient(ctx, 484, 260, 890, 305, '#ffffff', '#e0f2fe', '#38bdf8');
+        ctx.font = '700 28px Sans, Arial, sans-serif';
+        ctx.fillText(statusText, 484, 286);
+    }, 'kyuro-dice.png');
+}
+
+async function renderCrashBluePng(userObj, crashAt, targetMult, bet, statusText) {
+    return createCleanBlueCard(960, 420, 'KYURO CRASH', `${userObj.username} • ${bet.toLocaleString('fr-FR')} $`, userObj.avatarUrl, async (ctx, av) => {
+        drawRoundedAvatar(ctx, av, 72, 120, 30);
+        ctx.fillStyle = applyTextGradient(ctx, 118, 98, 880, 130, '#ffffff', '#bae6fd', '#38bdf8');
+        ctx.font = '700 26px Sans, Arial, sans-serif';
+        ctx.fillText(statusText, 118, 128);
+
+        const gx = 42, gy = 168, gw = 540, gh = 194;
+        ctx.beginPath();
+        ctx.roundRect(gx, gy, gw, gh, 18);
+        ctx.fillStyle = 'rgba(7, 20, 44, 0.94)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(125, 211, 252, 0.5)';
+        ctx.stroke();
+
+        const curvePts = [
+            { x: gx + 26, y: gy + gh - 26 },
+            { x: gx + 170, y: gy + gh - 52 },
+            { x: gx + 330, y: gy + gh - 98 },
+            { x: gx + gw - 32, y: gy + 32 }
+        ];
+        ctx.beginPath();
+        curvePts.forEach((p, idx) => idx === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+        ctx.strokeStyle = applyTextGradient(ctx, gx, gy + gh, gx + gw, gy, '#38bdf8', '#7dd3fc', '#ffffff');
+        ctx.lineWidth = 4;
+        ctx.stroke();
+
+        const lastPt = curvePts[curvePts.length - 1];
+        ctx.beginPath();
+        ctx.arc(lastPt.x, lastPt.y, 7, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.roundRect(604, 168, 318, 194, 18);
+        ctx.fillStyle = 'rgba(13, 38, 82, 0.94)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(125, 211, 252, 0.5)';
+        ctx.stroke();
+
+        ctx.fillStyle = '#7dd3fc';
+        ctx.font = '700 18px Sans, Arial, sans-serif';
+        ctx.fillText(`CIBLE : X${targetMult}`, 628, 212);
+        ctx.fillText(`CRASH : X${crashAt}`, 628, 246);
+
+        ctx.fillStyle = applyTextGradient(ctx, 628, 282, 900, 320, '#ffffff', '#e0f2fe', '#38bdf8');
+        ctx.font = '700 24px Sans, Arial, sans-serif';
+        ctx.fillText(statusText, 628, 306);
+    }, 'kyuro-crash.png');
+}
+async function renderCoinflipBluePng(userObj, side, out, bet, statusText) {
+    return createCleanBlueCard(960, 410, 'KYURO COINFLIP', `${userObj.username} • ${bet.toLocaleString('fr-FR')} $`, userObj.avatarUrl, async (ctx, av) => {
+        drawRoundedAvatar(ctx, av, 72, 120, 30);
+        ctx.fillStyle = applyTextGradient(ctx, 118, 98, 880, 130, '#ffffff', '#bae6fd', '#38bdf8');
+        ctx.font = '700 27px Sans, Arial, sans-serif';
+        ctx.fillText(statusText, 118, 128);
+
+        const coinGrad = ctx.createLinearGradient(74, 174, 234, 334);
+        coinGrad.addColorStop(0, '#38bdf8');
+        coinGrad.addColorStop(0.5, '#174285');
+        coinGrad.addColorStop(1, '#091f44');
+
+        ctx.beginPath();
+        ctx.arc(154, 254, 78, 0, Math.PI * 2);
+        ctx.fillStyle = coinGrad;
+        ctx.fill();
+        ctx.lineWidth = 3.5;
+        ctx.strokeStyle = '#bae6fd';
+        ctx.stroke();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '700 28px Sans, Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(out.toUpperCase(), 154, 256);
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+
+        ctx.beginPath();
+        ctx.roundRect(262, 176, 660, 156, 20);
+        ctx.fillStyle = 'rgba(13, 38, 82, 0.94)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(125, 211, 252, 0.52)';
+        ctx.stroke();
+
+        ctx.fillStyle = '#7dd3fc';
+        ctx.font = '700 19px Sans, Arial, sans-serif';
+        ctx.fillText(`CHOIX : ${side.toUpperCase()}   •   PIÈCE : ${out.toUpperCase()}`, 290, 224);
+
+        ctx.fillStyle = applyTextGradient(ctx, 290, 265, 895, 305, '#ffffff', '#e0f2fe', '#38bdf8');
+        ctx.font = '700 28px Sans, Arial, sans-serif';
+        ctx.fillText(statusText, 290, 286);
+    }, 'kyuro-coinflip.png');
+}
+
+async function renderFishOrMineBluePng(userObj, mode, itemLabel, gain) {
+    const isFish = mode === 'FISH';
+    return createCleanBlueCard(960, 410, `KYURO ${mode}`, userObj.username, userObj.avatarUrl, async (ctx, av) => {
+        drawRoundedAvatar(ctx, av, 72, 120, 30);
+        ctx.fillStyle = applyTextGradient(ctx, 118, 98, 880, 130, '#ffffff', '#bae6fd', '#38bdf8');
+        ctx.font = '700 28px Sans, Arial, sans-serif';
+        ctx.fillText(`${isFish ? 'PRISE' : 'FILON'} : ${itemLabel}`, 118, 128);
+
+        const zoneX = 42, zoneY = 172, zoneW = 420, zoneH = 172;
+        ctx.beginPath();
+        ctx.roundRect(zoneX, zoneY, zoneW, zoneH, 18);
+        ctx.fillStyle = 'rgba(8, 24, 54, 0.94)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(125, 211, 252, 0.55)';
+        ctx.stroke();
+
+        if (isFish) {
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = 3;
+            for (let row = 0; row < 3; row++) {
+                const wy = zoneY + 54 + row * 34;
+                ctx.beginPath();
+                ctx.moveTo(zoneX + 26, wy);
+                ctx.bezierCurveTo(zoneX + 110, wy - 18, zoneX + 220, wy + 18, zoneX + zoneW - 26, wy);
+                ctx.stroke();
+            }
+        } else {
+            const gems = [
+                { gx: zoneX + 95, gy: zoneY + 96, r: 28 },
+                { gx: zoneX + 210, gy: zoneY + 84, r: 38 },
+                { gx: zoneX + 315, gy: zoneY + 102, r: 24 }
+            ];
+            gems.forEach((g) => {
+                ctx.beginPath();
+                ctx.moveTo(g.gx, g.gy - g.r);
+                ctx.lineTo(g.gx + g.r * 0.85, g.gy);
+                ctx.lineTo(g.gx, g.gy + g.r);
+                ctx.lineTo(g.gx - g.r * 0.85, g.gy);
+                ctx.closePath();
+                ctx.fillStyle = 'rgba(56, 189, 248, 0.35)';
+                ctx.fill();
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = '#bae6fd';
+                ctx.stroke();
+            });
+        }
+
+        ctx.beginPath();
+        ctx.roundRect(486, 172, 436, 172, 18);
+        ctx.fillStyle = 'rgba(13, 38, 82, 0.94)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(125, 211, 252, 0.55)';
+        ctx.stroke();
+
+        ctx.fillStyle = '#7dd3fc';
+        ctx.font = '700 18px Sans, Arial, sans-serif';
+        ctx.fillText(isFish ? 'SESSION PÊCHE' : 'SESSION MINE', 514, 218);
+
+        ctx.fillStyle = applyTextGradient(ctx, 514, 256, 895, 300, '#ffffff', '#e0f2fe', '#38bdf8');
+        ctx.font = '700 30px Sans, Arial, sans-serif';
+        ctx.fillText(`GAIN : +${gain.toLocaleString('fr-FR')} $`, 514, 282);
+    }, isFish ? 'kyuro-fish.png' : 'kyuro-mine.png');
+}
+
 async function renderBlueActionPng(userObj, badge, headline, subline) {
     return createCleanBlueCard(960, 390, `KYURO • ${badge}`, userObj.username, userObj.avatarUrl, async (ctx, av) => {
         drawRoundedAvatar(ctx, av, 76, 134, 36);
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = applyTextGradient(ctx, 130, 118, 900, 152, '#ffffff', '#e0f2fe', '#7dd3fc');
         ctx.font = '700 30px Sans, Arial, sans-serif';
         ctx.fillText(headline, 130, 142);
 
@@ -544,7 +811,7 @@ async function renderBlueActionPng(userObj, badge, headline, subline) {
         ctx.strokeStyle = 'rgba(125, 211, 252, 0.5)';
         ctx.stroke();
 
-        ctx.fillStyle = '#e0f2fe';
+        ctx.fillStyle = applyTextGradient(ctx, 64, 252, 880, 292, '#ffffff', '#bae6fd', '#38bdf8');
         ctx.font = '700 28px Sans, Arial, sans-serif';
         ctx.fillText(subline, 64, 273);
     }, 'kyuro-action.png');
@@ -553,7 +820,7 @@ async function renderBlueActionPng(userObj, badge, headline, subline) {
 async function renderBlackjackBluePng(userObj, bet, pCards, pVal, dCards, dVal, statusText) {
     return createCleanBlueCard(960, 430, 'KYURO BLACKJACK', `${userObj.username} • ${bet.toLocaleString('fr-FR')} $`, userObj.avatarUrl, async (ctx, av) => {
         drawRoundedAvatar(ctx, av, 72, 116, 28);
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = applyTextGradient(ctx, 114, 102, 880, 132, '#ffffff', '#bae6fd', '#7dd3fc');
         ctx.font = '700 24px Sans, Arial, sans-serif';
         ctx.fillText(`TA MAIN (${pVal})`, 114, 124);
         ctx.fillText(`CROUPIER (${dVal})`, 534, 124);
@@ -597,7 +864,7 @@ async function renderBlackjackBluePng(userObj, bet, pCards, pVal, dCards, dVal, 
         ctx.strokeStyle = 'rgba(125, 211, 252, 0.55)';
         ctx.stroke();
 
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = applyTextGradient(ctx, 60, 326, 890, 356, '#ffffff', '#e0f2fe', '#38bdf8');
         ctx.font = '700 24px Sans, Arial, sans-serif';
         ctx.fillText(statusText, 60, 344);
     }, 'kyuro-blackjack.png');
@@ -606,7 +873,7 @@ async function renderBlackjackBluePng(userObj, bet, pCards, pVal, dCards, dVal, 
 async function renderRouletteBluePng(userObj, num, color, bet, statusText) {
     return createCleanBlueCard(960, 420, 'KYURO ROULETTE', userObj.username, userObj.avatarUrl, async (ctx, av) => {
         drawRoundedAvatar(ctx, av, 72, 122, 30);
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = applyTextGradient(ctx, 118, 104, 880, 136, '#ffffff', '#bae6fd', '#7dd3fc');
         ctx.font = '700 28px Sans, Arial, sans-serif';
         ctx.fillText(`RÉSULTAT : ${num} (${color.toUpperCase()})`, 118, 130);
 
@@ -638,44 +905,15 @@ async function renderRouletteBluePng(userObj, num, color, bet, statusText) {
         ctx.font = '700 20px Sans, Arial, sans-serif';
         ctx.fillText(`MISE : ${bet.toLocaleString('fr-FR')} $`, 294, 224);
 
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = applyTextGradient(ctx, 294, 262, 900, 302, '#ffffff', '#e0f2fe', '#38bdf8');
         ctx.font = '700 30px Sans, Arial, sans-serif';
         ctx.fillText(statusText, 294, 286);
     }, 'kyuro-roulette.png');
 }
 
-async function renderSlotsBluePng(userObj, reels, bet, statusText) {
-    return createCleanBlueCard(960, 420, 'KYURO SLOTS', `${userObj.username} • ${bet.toLocaleString('fr-FR')} $`, userObj.avatarUrl, async (ctx, av) => {
-        drawRoundedAvatar(ctx, av, 72, 120, 28);
-        ctx.fillStyle = '#ffffff';
-        ctx.font = '700 26px Sans, Arial, sans-serif';
-        ctx.fillText(statusText, 114, 128);
-
-        const labels = { '💎': 'GEM', '💠': 'BLU', '🪙': 'USD', '⚡': 'ZAP', '🔥': 'HOT' };
-        reels.forEach((sym, i) => {
-            const x = 48 + i * 296;
-            ctx.beginPath();
-            ctx.roundRect(x, 174, 272, 166, 20);
-            ctx.fillStyle = 'rgba(13, 38, 82, 0.94)';
-            ctx.fill();
-            ctx.lineWidth = 2;
-            ctx.strokeStyle = '#7dd3fc';
-            ctx.stroke();
-
-            ctx.fillStyle = '#ffffff';
-            ctx.font = '700 42px Sans, Arial, sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(labels[sym] || 'WIN', x + 136, 257);
-            ctx.textAlign = 'left';
-            ctx.textBaseline = 'alphabetic';
-        });
-    }, 'kyuro-slots.png');
-}
-
 async function renderLeaderboardBluePng(entries) {
     return createCleanBlueCard(960, 450, 'KYURO TOP', 'CLASSEMENT FORTUNES ($)', null, async (ctx) => {
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = applyTextGradient(ctx, 38, 94, 650, 126, '#ffffff', '#e0f2fe', '#7dd3fc');
         ctx.font = '700 28px Sans, Arial, sans-serif';
         ctx.fillText('TOP JOUEURS DU SERVEUR', 38, 116);
 
@@ -711,7 +949,7 @@ async function renderLeaderboardBluePng(entries) {
             ctx.roundRect(barX, barY, Math.round(barW * ratio), barH, 6);
             ctx.fill();
 
-            ctx.fillStyle = '#ffffff';
+            ctx.fillStyle = applyTextGradient(ctx, 720, y + 10, 904, y + 36, '#ffffff', '#bae6fd', '#38bdf8');
             ctx.font = '700 20px Sans, Arial, sans-serif';
             ctx.textAlign = 'right';
             ctx.fillText(`${Math.floor(e.total).toLocaleString('fr-FR')} $`, 904, y + 29);
@@ -766,8 +1004,7 @@ function getHelpSection(tab = 'all') {
         return {
             title: '🎰 Kyuro • Jeux & Fun (`all` OK)',
             body: [
-                '`*blackjack <mise|all>` (`*bj`) — Table interactive',
-                '`*roulette <rouge|noir|vert|pair|impair> <mise|all>` (`*rl`)',
+                '`*blackjack <mise|all>` (`*bj`) • `*roulette <rouge|noir|vert|pair|impair> <mise|all>` (`*rl`)',
                 '`*slots <mise|all>` (`*slot`) • `*coinflip <pile|face> <mise|all>` (`*cf`)',
                 '`*dice <1-6> <mise|all>` • `*crash <mise|all>` • `*spin <mise|all>`',
                 '`*duel <@membre> <mise|all>` • `*scratch <mise|all>` • `*lottery [buy <mise>|draw]`'
@@ -844,7 +1081,7 @@ function auctionButtonRow(disabled = false) {
 function getBuildingStats(ownerObj) {
     const list = Array.isArray(ownerObj.buildings) ? ownerObj.buildings : [];
     const maxRes = list.reduce((acc, b) => acc + (b.maxResidents || 0), 0);
-    const rentPerHour = list.reduce((acc, b) => acc + ((b.residents || 0) * (b.rentPerResident || 100)), 0);
+    const rentPerHour = list.reduce((acc, b) => acc + ((b.residents || 0) * (b.rentPerResident || 65)), 0);
     const residentsTotal = list.reduce((acc, b) => acc + (b.residents || 0), 0);
     return { maxRes, rentPerHour, residentsTotal };
 }
@@ -857,7 +1094,7 @@ function computePendingRent(ownerObj) {
     for (const b of list) {
         const last = b.lastCollect || now;
         const hours = Math.min(24, Math.max(0, (now - last) / 3600000));
-        total += Math.floor(hours * (b.residents || 0) * (b.rentPerResident || 100));
+        total += Math.floor(hours * (b.residents || 0) * (b.rentPerResident || 65));
     }
     return total;
 }
@@ -922,7 +1159,7 @@ async function handleMonopoly(message, args) {
                 body: `**${host.username}** n'a plus de place disponible dans ses immeubles.`
             });
         }
-        const depositFee = 650;
+        const depositFee = 450;
         if (u.cash < depositFee) {
             return replyContainer(message, {
                 title: '🏠 Caution requise',
@@ -979,10 +1216,10 @@ async function handleWithdraw(message, args) {
 
 async function handleWork(message) {
     const u = getUser(message.author.id, message.author);
-    const now = Date.now(), cd = 35 * 60 * 1000;
+    const now = Date.now(), cd = 45 * 60 * 1000;
     if (now - u.cooldowns.work < cd) return replyContainer(message, { title: '💼 Travail', body: `Patiente **${formatCooldown(cd - (now - u.cooldowns.work))}**.` });
     u.cooldowns.work = now;
-    const gain = randInt(160, 620);
+    const gain = randInt(45, 190);
     u.cash += gain; saveData();
     return replyImageOnly(message, await renderBlueActionPng(u, 'WORK', `SALAIRE : +${gain.toLocaleString('fr-FR')} $`, `CASH : ${u.cash.toLocaleString('fr-FR')} $`));
 }
@@ -992,18 +1229,18 @@ async function handleDaily(message) {
     const now = Date.now(), cd = 24 * 60 * 60 * 1000;
     if (now - u.cooldowns.daily < cd) return replyContainer(message, { title: '🎁 Daily', body: `Prochain daily dans **${formatCooldown(cd - (now - u.cooldowns.daily))}**.` });
     u.cooldowns.daily = now;
-    const gain = randInt(750, 1850);
+    const gain = randInt(150, 480);
     u.cash += gain; saveData();
     return replyImageOnly(message, await renderBlueActionPng(u, 'DAILY', `BONUS : +${gain.toLocaleString('fr-FR')} $`, `CASH : ${u.cash.toLocaleString('fr-FR')} $`));
 }
 
 async function handleCrime(message) {
     const u = getUser(message.author.id, message.author);
-    const now = Date.now(), cd = 25 * 60 * 1000;
+    const now = Date.now(), cd = 30 * 60 * 1000;
     if (now - u.cooldowns.crime < cd) return replyContainer(message, { title: '🕵️ Crime', body: `Patiente **${formatCooldown(cd - (now - u.cooldowns.crime))}**.` });
     u.cooldowns.crime = now;
-    const ok = Math.random() < 0.45;
-    const amt = ok ? randInt(320, 1050) : Math.min(u.cash, randInt(250, 750));
+    const ok = Math.random() < 0.38;
+    const amt = ok ? randInt(90, 340) : Math.min(u.cash, randInt(80, 260));
     if (ok) u.cash += amt; else u.cash -= amt;
     saveData();
     return replyImageOnly(message, await renderBlueActionPng(u, 'CRIME', ok ? `COUP RÉUSSI +${amt.toLocaleString('fr-FR')} $` : `AMENDE -${amt.toLocaleString('fr-FR')} $`, `CASH : ${u.cash.toLocaleString('fr-FR')} $`));
@@ -1011,28 +1248,27 @@ async function handleCrime(message) {
 
 async function handleMine(message) {
     const u = getUser(message.author.id, message.author);
-    const now = Date.now(), cd = 20 * 60 * 1000;
+    const now = Date.now(), cd = 25 * 60 * 1000;
     if (now - u.cooldowns.mine < cd) return replyContainer(message, { title: '⛏️ Mine', body: `Patiente **${formatCooldown(cd - (now - u.cooldowns.mine))}**.` });
     u.cooldowns.mine = now;
     const ores = ['FER', 'CUIVRE', 'OR', 'DIAMANT', 'CRISTAL KYR'];
     const ore = ores[randInt(0, ores.length - 1)];
-    const gain = randInt(140, 720);
+    const gain = randInt(35, 220);
     u.cash += gain; saveData();
-    return replyImageOnly(message, await renderBlueActionPng(u, 'MINE', `FILON : ${ore}`, `RÉCOLTE : +${gain.toLocaleString('fr-FR')} $`));
+    return replyImageOnly(message, await renderFishOrMineBluePng(u, 'MINE', ore, gain));
 }
 
 async function handleFish(message) {
     const u = getUser(message.author.id, message.author);
-    const now = Date.now(), cd = 20 * 60 * 1000;
+    const now = Date.now(), cd = 25 * 60 * 1000;
     if (now - u.cooldowns.fish < cd) return replyContainer(message, { title: '🎣 Pêche', body: `Patiente **${formatCooldown(cd - (now - u.cooldowns.fish))}**.` });
     u.cooldowns.fish = now;
     const catches = ['GARDON', 'BROCHET', 'CARPE', 'COFFRE BLEU', 'PERLE'];
     const item = catches[randInt(0, catches.length - 1)];
-    const gain = randInt(120, 640);
+    const gain = randInt(30, 195);
     u.cash += gain; saveData();
-    return replyImageOnly(message, await renderBlueActionPng(u, 'FISH', `PRISE : ${item}`, `GAIN : +${gain.toLocaleString('fr-FR')} $`));
+    return replyImageOnly(message, await renderFishOrMineBluePng(u, 'FISH', item, gain));
 }
-
 async function handleGift(message, args) {
     const s = getUser(message.author.id, message.author);
     const target = message.mentions.users.first();
@@ -1041,7 +1277,7 @@ async function handleGift(message, args) {
         return replyContainer(message, { title: '🎁 Cadeau', body: 'Utilisation : `*gift <@membre> <montant|all>`' });
     }
     const r = getUser(target.id, target);
-    const bonus = Math.floor(amt * (randInt(3, 10) / 100));
+    const bonus = Math.floor(amt * (randInt(1, 6) / 100));
     s.cash -= amt;
     r.cash += amt + bonus;
     saveData();
@@ -1056,14 +1292,14 @@ async function handleRob(message) {
     const target = message.mentions.users.first();
     if (!target || target.bot || target.id === message.author.id) return replyContainer(message, { title: '🔫 Vol', body: 'Utilisation : `*rob <@membre>`' });
     if (isSuperOwner(target)) return replyContainer(message, { title: '🔫 Vol bloqué', body: 'Impossible de voler le Super Owner.' });
-    const now = Date.now(), cd = 40 * 60 * 1000;
+    const now = Date.now(), cd = 45 * 60 * 1000;
     if (now - atk.cooldowns.rob < cd) return replyContainer(message, { title: '🔫 Vol', body: `Patiente **${formatCooldown(cd - (now - atk.cooldowns.rob))}**.` });
     atk.cooldowns.rob = now;
     const def = getUser(target.id, target);
-    if (def.cash < 250) return replyContainer(message, { title: '🔫 Vol', body: 'Cible trop pauvre.' });
-    const ok = Math.random() < 0.38;
-    const pct = randInt(8, 22) / 100;
-    const amt = ok ? Math.min(def.cash, Math.max(150, Math.floor(def.cash * pct))) : Math.min(atk.cash, randInt(200, 600));
+    if (def.cash < 100) return replyContainer(message, { title: '🔫 Vol', body: 'Cible trop pauvre.' });
+    const ok = Math.random() < 0.34;
+    const pct = randInt(5, 16) / 100;
+    const amt = ok ? Math.min(def.cash, Math.max(40, Math.floor(def.cash * pct))) : Math.min(atk.cash, randInt(60, 220));
     if (ok) { def.cash -= amt; atk.cash += amt; } else { atk.cash -= amt; }
     saveData();
     return replyImageOnly(message, await renderBlueActionPng(atk, 'ROB', ok ? `VOLÉ ${amt.toLocaleString('fr-FR')} $` : `RATÉ -${amt.toLocaleString('fr-FR')} $`, `CIBLE : ${def.username}`));
@@ -1105,8 +1341,8 @@ async function handleHack(message) {
     if (now - atk.cooldowns.hack < cd) return replyContainer(message, { title: '💻 Hack', body: `Recharge dans **${formatCooldown(cd - (now - atk.cooldowns.hack))}**.` });
     atk.cooldowns.hack = now;
     const def = getUser(target.id, target);
-    const ok = Math.random() < 0.40 && def.cash >= 250;
-    const amt = ok ? Math.min(def.cash, Math.max(180, Math.floor(def.cash * (randInt(8, 18) / 100)))) : Math.min(atk.cash, randInt(200, 550));
+    const ok = Math.random() < 0.35 && def.cash >= 100;
+    const amt = ok ? Math.min(def.cash, Math.max(50, Math.floor(def.cash * (randInt(5, 14) / 100)))) : Math.min(atk.cash, randInt(60, 200));
     if (ok) { def.cash -= amt; atk.cash += amt; atk.stats.hacksSuccess += 1; } else { atk.cash -= amt; }
     saveData();
     return replyImageOnly(message, await renderBlueActionPng(atk, 'HACK', ok ? `BREACH +${amt.toLocaleString('fr-FR')} $` : `TRACE -${amt.toLocaleString('fr-FR')} $`, `CIBLE : ${def.username}`));
@@ -1121,18 +1357,19 @@ async function handleHeist(message) {
     if (now - atk.cooldowns.heist < cd) return replyContainer(message, { title: '🏦 Heist', body: `Recharge dans **${formatCooldown(cd - (now - atk.cooldowns.heist))}**.` });
     atk.cooldowns.heist = now;
     const def = getUser(target.id, target);
-    const ok = Math.random() < 0.34 && def.bank >= 600;
-    const amt = ok ? Math.min(def.bank, Math.max(300, Math.floor(def.bank * (randInt(10, 20) / 100)))) : Math.min(atk.cash, randInt(350, 950));
+    const ok = Math.random() < 0.28 && def.bank >= 200;
+    const amt = ok ? Math.min(def.bank, Math.max(90, Math.floor(def.bank * (randInt(6, 15) / 100)))) : Math.min(atk.cash, randInt(100, 320));
     if (ok) { def.bank -= amt; atk.cash += amt; } else { atk.cash -= amt; }
     saveData();
     return replyImageOnly(message, await renderBlueActionPng(atk, 'HEIST', ok ? `CASSE +${amt.toLocaleString('fr-FR')} $` : `ALARME -${amt.toLocaleString('fr-FR')} $`, `BANQUE : ${def.username}`));
 }
+
 async function handleScratch(message, args) {
     const u = getUser(message.author.id, message.author);
     const bet = parseAmount(args[0], u.cash);
     if (!bet || u.cash < bet) return replyContainer(message, { title: '🎟️ Scratch', body: 'Utilisation : `*scratch <mise|all>`' });
     u.cash -= bet; u.stats.wagered += bet;
-    const mults = [0, 0, 0, 0.4, 0.8, 1.3, 2.2, 4];
+    const mults = [0, 0, 0, 0.35, 0.75, 1.2, 2.0, 3.2];
     const m = mults[randInt(0, mults.length - 1)];
     const gain = Math.floor(bet * m);
     if (gain > 0) { u.cash += gain; u.stats.wins += 1; } else { u.stats.losses += 1; }
@@ -1145,7 +1382,7 @@ async function handleSpin(message, args) {
     const bet = parseAmount(args[0], u.cash);
     if (!bet || u.cash < bet) return replyContainer(message, { title: '🎡 Spin', body: 'Utilisation : `*spin <mise|all>`' });
     u.cash -= bet; u.stats.wagered += bet;
-    const wheel = [0, 0, 0.5, 0.9, 1.4, 2.1, 3.5];
+    const wheel = [0, 0, 0.4, 0.8, 1.25, 1.85, 3.0];
     const m = wheel[randInt(0, wheel.length - 1)];
     const gain = Math.floor(bet * m);
     if (gain > 0) { u.cash += gain; u.stats.wins += 1; } else { u.stats.losses += 1; }
@@ -1166,10 +1403,10 @@ async function handleLottery(message, args) {
     }
     if (sub === 'draw') {
         if (db.lotteryPot <= 0) return replyContainer(message, { title: '🎟️ Loterie', body: 'Le pot est vide.' });
-        const won = Math.random() < 0.18;
+        const won = Math.random() < 0.14;
         if (won) {
             const prize = db.lotteryPot;
-            db.lotteryPot = 3000;
+            db.lotteryPot = 1000;
             u.cash += prize;
             saveData();
             return replyImageOnly(message, await renderBlueActionPng(u, 'LOTTERY', `JACKPOT +${prize.toLocaleString('fr-FR')} $`, `CASH : ${u.cash.toLocaleString('fr-FR')} $`));
@@ -1205,7 +1442,6 @@ async function handleAuctionCreate(message, args) {
     if (!isBotOwner(message.author)) {
         return replyContainer(message, { title: '⛔ Accès refusé', body: 'Commande réservée aux Owners.' });
     }
-    // Format : *enchère <durée> <prix> | <titre>
     const rawJoin = args.join(' ');
     const pipeIdx = rawJoin.indexOf('|');
     const leftPart = pipeIdx >= 0 ? rawJoin.slice(0, pipeIdx).trim().split(/ +/) : args;
@@ -1321,7 +1557,7 @@ async function handleRoulette(message, args) {
     const color = num === 0 ? 'vert' : (reds.has(num) ? 'rouge' : 'noir');
     const parity = num === 0 ? 'zero' : (num % 2 === 0 ? 'pair' : 'impair');
     const norm = ['rouge','red'].includes(ch) ? 'rouge' : ['noir','black'].includes(ch) ? 'noir' : ['vert','green'].includes(ch) ? 'vert' : ['pair','even'].includes(ch) ? 'pair' : 'impair';
-    const mult = (norm === 'vert' && color === 'vert') ? 14 : ((norm === color || norm === parity) ? 1.85 : 0);
+    const mult = (norm === 'vert' && color === 'vert') ? 12 : ((norm === color || norm === parity) ? 1.75 : 0);
     const win = Math.floor(bet * mult);
     if (win > 0) { u.cash += win; u.stats.wins += 1; } else { u.stats.losses += 1; }
     saveData();
@@ -1335,7 +1571,7 @@ async function handleSlots(message, args) {
     u.cash -= bet; u.stats.wagered += bet;
     const syms = ['💎', '💠', '🪙', '⚡', '🔥'];
     const r = [0,1,2].map(() => syms[randInt(0, syms.length - 1)]);
-    const mult = (r[0] === r[1] && r[1] === r[2]) ? (r[0] === '💎' ? 8 : 4) : ((r[0] === r[1] || r[1] === r[2] || r[0] === r[2]) ? 1.25 : 0);
+    const mult = (r[0] === r[1] && r[1] === r[2]) ? (r[0] === '💎' ? 7 : 3.5) : ((r[0] === r[1] || r[1] === r[2] || r[0] === r[2]) ? 1.15 : 0);
     const win = Math.floor(bet * mult);
     if (win > 0) { u.cash += win; u.stats.wins += 1; } else { u.stats.losses += 1; }
     saveData();
@@ -1350,10 +1586,10 @@ async function handleCoinflip(message, args) {
     u.cash -= bet; u.stats.wagered += bet;
     const out = Math.random() < 0.5 ? 'pile' : 'face';
     const won = out === side;
-    const payout = Math.floor(bet * 1.9);
+    const payout = Math.floor(bet * 1.8);
     if (won) { u.cash += payout; u.stats.wins += 1; } else { u.stats.losses += 1; }
     saveData();
-    return replyImageOnly(message, await renderBlueActionPng(u, 'COINFLIP', `PIÈCE : ${out.toUpperCase()}`, won ? `GAGNÉ : +${payout.toLocaleString('fr-FR')} $` : `PERDU : -${bet.toLocaleString('fr-FR')} $`));
+    return replyImageOnly(message, await renderCoinflipBluePng(u, side, out, bet, won ? `GAGNÉ : +${payout.toLocaleString('fr-FR')} $` : `PERDU : -${bet.toLocaleString('fr-FR')} $`));
 }
 
 async function handleDice(message, args) {
@@ -1364,10 +1600,10 @@ async function handleDice(message, args) {
     u.cash -= bet; u.stats.wagered += bet;
     const roll = randInt(1, 6);
     const won = roll === guess;
-    const payout = bet * 4;
+    const payout = Math.floor(bet * 3.6);
     if (won) { u.cash += payout; u.stats.wins += 1; } else { u.stats.losses += 1; }
     saveData();
-    return replyImageOnly(message, await renderBlueActionPng(u, 'DICE', `DÉ : ${roll} (CHOIX ${guess})`, won ? `JACKPOT X4 : +${payout.toLocaleString('fr-FR')} $` : `PERDU : -${bet.toLocaleString('fr-FR')} $`));
+    return replyImageOnly(message, await renderDiceBluePng(u, roll, guess, bet, won ? `JACKPOT : +${payout.toLocaleString('fr-FR')} $` : `PERDU : -${bet.toLocaleString('fr-FR')} $`));
 }
 
 async function handleCrash(message, args) {
@@ -1375,13 +1611,13 @@ async function handleCrash(message, args) {
     const bet = parseAmount(args[0], u.cash);
     if (!bet || u.cash < bet) return replyContainer(message, { title: '🚀 Crash', body: 'Utilisation : `*crash <mise|all>`' });
     u.cash -= bet; u.stats.wagered += bet;
-    const crashAt = Number((1 + Math.random() * 2.5).toFixed(2));
-    const targetMult = Number((1.1 + Math.random() * 1.7).toFixed(2));
+    const crashAt = Number((1 + Math.random() * 2.2).toFixed(2));
+    const targetMult = Number((1.1 + Math.random() * 1.5).toFixed(2));
     const won = crashAt >= targetMult;
     const pay = won ? Math.floor(bet * targetMult) : 0;
     if (won) { u.cash += pay; u.stats.wins += 1; } else { u.stats.losses += 1; }
     saveData();
-    return replyImageOnly(message, await renderBlueActionPng(u, 'CRASH', `X${targetMult} VS CRASH X${crashAt}`, won ? `ENCAISSÉ : +${pay.toLocaleString('fr-FR')} $` : `CRASH : -${bet.toLocaleString('fr-FR')} $`));
+    return replyImageOnly(message, await renderCrashBluePng(u, crashAt, targetMult, bet, won ? `ENCAISSÉ : +${pay.toLocaleString('fr-FR')} $` : `CRASH : -${bet.toLocaleString('fr-FR')} $`));
 }
 
 client.on('interactionCreate', async interaction => {
@@ -1389,7 +1625,8 @@ client.on('interactionCreate', async interaction => {
         const msgId = interaction.customId.replace('auction_modal_', '');
         const auc = activeAuctions.get(msgId);
         if (!auc || auc.ended || Date.now() >= auc.endsAt) {
-            return interaction.reply({ content: 'Cette enchère est terminée.', flags: MessageFlags.Ephemeral }).catch(() => {});
+            return interaction.reply({ content: 'Cette enchère est terminée.', flags: MessageFlags.Ephemer                flags: MessageFlags.Ephemeral
+            }).catch(() => {});
         }
         const rawVal = interaction.fields.getTextInputValue('bid_amount').trim();
         const u = getUser(interaction.user.id, interaction.user);
@@ -1437,7 +1674,7 @@ client.on('interactionCreate', async interaction => {
             .setCustomId('bid_amount')
             .setLabel(`Montant (actuel : ${auc.highestBid} $)`)
             .setStyle(TextInputStyle.Short)
-            .setPlaceholder(`Ex: ${Math.max(100, auc.highestBid + 100)}`)
+            .setPlaceholder(`Ex: ${Math.max(50, auc.highestBid + 50)}`)
             .setRequired(true);
         modal.addComponents(new ActionRowBuilder().addComponents(input));
         return interaction.showModal(modal).catch(() => {});
@@ -1469,7 +1706,7 @@ client.on('interactionCreate', async interaction => {
             }).catch(() => {});
         }
         const p1Wins = Math.random() < 0.5;
-        const winAmt = Math.floor(duel.bet * 0.95);
+        const winAmt = Math.floor(duel.bet * 0.9);
         if (p1Wins) { p1.cash += winAmt; p2.cash -= duel.bet; p1.stats.wins += 1; p2.stats.losses += 1; }
         else { p2.cash += winAmt; p1.cash -= duel.bet; p2.stats.wins += 1; p1.stats.losses += 1; }
         saveData();
@@ -1493,13 +1730,13 @@ client.on('interactionCreate', async interaction => {
             while (handValue(game.dCards) < 17) game.dCards.push(drawCard());
             const dv = handValue(game.dCards);
             if (dv === 21) { u.cash += game.bet; status = 'ÉGALITÉ 21'; }
-            else { const pay = Math.floor(game.bet * 1.9); u.cash += pay; u.stats.wins += 1; status = `21 WIN +${pay} $`; }
+            else { const pay = Math.floor(game.bet * 1.8); u.cash += pay; u.stats.wins += 1; status = `21 WIN +${pay} $`; }
         }
     } else if (interaction.customId === 'bj_stand') {
         finished = true;
         while (handValue(game.dCards) < 17) game.dCards.push(drawCard());
         const pv = handValue(game.pCards), dv = handValue(game.dCards);
-        if (dv > 21 || pv > dv) { const pay = Math.floor(game.bet * 1.9); u.cash += pay; u.stats.wins += 1; status = `WIN ${pv} VS ${dv} +${pay} $`; }
+        if (dv > 21 || pv > dv) { const pay = Math.floor(game.bet * 1.8); u.cash += pay; u.stats.wins += 1; status = `WIN ${pv} VS ${dv} +${pay} $`; }
         else if (pv === dv) { u.cash += game.bet; status = `ÉGALITÉ ${pv} VS ${dv}`; }
         else { u.stats.losses += 1; status = `PERDU ${pv} VS ${dv} -${game.bet} $`; }
     }
@@ -1508,7 +1745,6 @@ client.on('interactionCreate', async interaction => {
     const att = await renderBlackjackBluePng(u, game.bet, game.pCards, handValue(game.pCards), finished ? game.dCards : [game.dCards[0], '??'], finished ? handValue(game.dCards) : '?', status);
     await interaction.update({ files: [att], components: finished ? [] : interaction.message.components }).catch(() => {});
 });
-
 client.on('messageCreate', async message => {
     if (!message.author || message.author.bot || !message.guild || !message.content.startsWith(PREFIX)) return;
     const args = message.content.slice(PREFIX.length).trim().split(/ +/);
@@ -1565,9 +1801,9 @@ client.on('messageCreate', async message => {
     }
     if (cmd === 'reseteconomy') {
         if (!isBotOwner(message.author)) return replyContainer(message, { title: '⛔ Accès refusé', body: 'Réservé aux Owners.' });
-        db = { users: {}, cryptos: JSON.parse(JSON.stringify(DEFAULT_CRYPTOS)), casinoCategories: db.casinoCategories || {}, owners: db.owners || [], lotteryPot: 10000 };
+        db = { users: {}, cryptos: JSON.parse(JSON.stringify(DEFAULT_CRYPTOS)), casinoCategories: db.casinoCategories || {}, owners: db.owners || [], lotteryPot: 2500 };
         saveData();
-        return replyContainer(message, { title: '♻️ Reset OK', body: 'Économie réinitialisée.' });
+        return replyContainer(message, { title: '♻️ Reset OK', body: 'Économie réinitialisée à **0 $**.' });
     }
     if (cmd === 'setmoney') {
         if (!isBotOwner(message.author)) return replyContainer(message, { title: '⛔ Accès refusé', body: 'Réservé aux Owners.' });
@@ -1651,5 +1887,5 @@ setInterval(() => {
 process.on('unhandledRejection', reason => console.error('Unhandled Rejection:', reason));
 process.on('uncaughtException', err => console.error('Uncaught Exception:', err));
 
-client.once('clientReady', () => console.log(`Kyuro Casino v6.2 prêt : ${client.user.tag}`));
+client.once('clientReady', () => console.log(`Kyuro Casino v6.3 prêt : ${client.user.tag}`));
 client.login(process.env.DISCORD_TOKEN);
