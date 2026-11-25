@@ -1,5 +1,4 @@
-
-// Build Revision: Kyuro-Casino-v6.0-Fun (Prefix: *)
+// Build Revision: Kyuro-Casino-v6.1-CleanUI (Prefix: *)
 const {
     Client,
     GatewayIntentBits,
@@ -20,10 +19,17 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 
+let NapiCanvas = null;
+try {
+    NapiCanvas = require('@napi-rs/canvas');
+} catch (_) {
+    NapiCanvas = null;
+}
+
 const PORT = process.env.PORT || 3001;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-    res.end('Kyuro Casino v6.0 OK\n');
+    res.end('Kyuro Casino v6.1 OK\n');
 }).listen(PORT, '0.0.0.0', () => console.log(`HTTP actif sur le port ${PORT}`));
 
 const client = new Client({
@@ -150,7 +156,7 @@ function getUser(userId, discordUser = null) {
             buildings: [],
             homeBuildingOwnerId: null,
             stats: { wins: 0, losses: 0, wagered: 0, hacksSuccess: 0 },
-            cooldowns: { work: 0, daily: 0, crime: 0, rob: 0, hack: 0, heist: 0, scratch: 0 }
+            cooldowns: { work: 0, daily: 0, crime: 0, rob: 0, hack: 0, heist: 0, scratch: 0, mine: 0, fish: 0, spin: 0 }
         };
         saveData();
     }
@@ -163,7 +169,7 @@ function getUser(userId, discordUser = null) {
     if (!u.crypto) u.crypto = { BTC: 0, ETH: 0, KYR: 0, SOL: 0 };
     if (!Array.isArray(u.buildings)) u.buildings = [];
     if (!u.stats) u.stats = { wins: 0, losses: 0, wagered: 0, hacksSuccess: 0 };
-    if (!u.cooldowns) u.cooldowns = { work: 0, daily: 0, crime: 0, rob: 0, hack: 0, heist: 0, scratch: 0 };
+    if (!u.cooldowns) u.cooldowns = { work: 0, daily: 0, crime: 0, rob: 0, hack: 0, heist: 0, scratch: 0, mine: 0, fish: 0, spin: 0 };
     return u;
 }
 
@@ -187,97 +193,6 @@ function formatCooldown(ms) {
     if (m > 0) return `${m}m ${s}s`;
     return `${s}s`;
 }
-// --- Glyphes 7x9 nets avec lissage anti-aliasing ---
-const GLYPHS_7X9 = {
-    'A': ['0011100','0100010','1000001','1000001','1111111','1000001','1000001','1000001','1000001'],
-    'B': ['1111110','1000001','1000001','1111110','1000001','1000001','1000001','1000001','1111110'],
-    'C': ['0011110','0100001','1000000','1000000','1000000','1000000','1000000','0100001','0011110'],
-    'D': ['1111100','1000010','1000001','1000001','1000001','1000001','1000001','1000010','1111100'],
-    'E': ['1111111','1000000','1000000','1000000','1111110','1000000','1000000','1000000','1111111'],
-    'F': ['1111111','1000000','1000000','1000000','1111110','1000000','1000000','1000000','1000000'],
-    'G': ['0011110','0100001','1000000','1000000','1000111','1000001','1000001','0100001','0011110'],
-    'H': ['1000001','1000001','1000001','1000001','1111111','1000001','1000001','1000001','1000001'],
-    'I': ['0111110','0001000','0001000','0001000','0001000','0001000','0001000','0001000','0111110'],
-    'J': ['0001111','0000010','0000010','0000010','0000010','1000010','1000010','0100100','0011000'],
-    'K': ['1000010','1000100','1001000','1010000','1100000','1010000','1001000','1000100','1000010'],
-    'L': ['1000000','1000000','1000000','1000000','1000000','1000000','1000000','1000000','1111111'],
-    'M': ['1000001','1100011','1010101','1010101','1001001','1000001','1000001','1000001','1000001'],
-    'N': ['1000001','1100001','1010001','1001001','1000101','1000011','1000001','1000001','1000001'],
-    'O': ['0011100','0100010','1000001','1000001','1000001','1000001','1000001','0100010','0011100'],
-    'P': ['1111110','1000001','1000001','1000001','1111110','1000000','1000000','1000000','1000000'],
-    'Q': ['0011100','0100010','1000001','1000001','1000001','1001001','1000101','0100010','0011101'],
-    'R': ['1111110','1000001','1000001','1000001','1111110','1001000','1000100','1000010','1000001'],
-    'S': ['0011110','0100001','1000000','0100000','0011100','0000010','0000001','1000001','0111110'],
-    'T': ['1111111','0001000','0001000','0001000','0001000','0001000','0001000','0001000','0001000'],
-    'U': ['1000001','1000001','1000001','1000001','1000001','1000001','1000001','0100010','0011100'],
-    'V': ['1000001','1000001','1000001','0100010','0100010','0010100','0010100','0001000','0001000'],
-    'W': ['1000001','1000001','1000001','0100010','1001001','1010101','1010101','1100011','1000001'],
-    'X': ['1000001','0100010','0010100','0001000','0001000','0010100','0100010','1000001','1000001'],
-    'Y': ['1000001','0100010','0010100','0001000','0001000','0001000','0001000','0001000','0001000'],
-    'Z': ['1111111','0000010','0000100','0001000','0010000','0100000','1000000','1000000','1111111'],
-    '0': ['0011100','0100010','1000101','1001001','1010001','1000001','1000001','0100010','0011100'],
-    '1': ['0001000','0011000','0101000','0001000','0001000','0001000','0001000','0001000','0111110'],
-    '2': ['0011100','0100010','1000001','0000010','0001100','0010000','0100000','1000000','1111111'],
-    '3': ['0111110','1000001','0000001','0001110','0000001','0000001','0000001','1000001','0111110'],
-    '4': ['0000100','0001100','0010100','0100100','1000100','1111111','0000100','0000100','0000100'],
-    '5': ['1111111','1000000','1000000','1111110','0000001','0000001','0000001','1000001','0111110'],
-    '6': ['0011110','0100000','1000000','1111110','1000001','1000001','1000001','0100010','0011100'],
-    '7': ['1111111','1000001','0000010','0000100','0001000','0010000','0010000','0010000','0010000'],
-    '8': ['0011100','0100010','1000010','0011100','0100010','1000001','1000001','0100010','0011100'],
-    '9': ['0011100','0100010','1000001','1000001','0111111','0000001','0000001','0000010','0111100'],
-    '$': ['0001000','0011110','0101000','0011100','0001110','0001010','0111100','0001000','0001000'],
-    ':': ['0000000','0001100','0001100','0000000','0000000','0001100','0001100','0000000','0000000'],
-    '.': ['0000000','0000000','0000000','0000000','0000000','0000000','0001100','0001100','0000000'],
-    ',': ['0000000','0000000','0000000','0000000','0000000','0000000','0001100','0001100','0011000'],
-    '-': ['0000000','0000000','0000000','0000000','0111110','0000000','0000000','0000000','0000000'],
-    '+': ['0000000','0000000','0001000','0001000','0111110','0001000','0001000','0000000','0000000'],
-    '/': ['0000010','0000100','0000100','0001000','0010000','0010000','0100000','0100000','0000000'],
-    '|': ['0001000','0001000','0001000','0001000','0001000','0001000','0001000','0001000','0001000'],
-    '[': ['0011110','0010000','0010000','0010000','0010000','0010000','0010000','0010000','0011110'],
-    ']': ['0111100','0000100','0000100','0000100','0000100','0000100','0000100','0000100','0111100'],
-    '(': ['0000100','0001000','0010000','0010000','0010000','0010000','0010000','0001000','0000100'],
-    ')': ['0010000','0001000','0000100','0000100','0000100','0000100','0000100','0001000','0010000'],
-    '#': ['0010100','0010100','1111111','0010100','0010100','1111111','0010100','0010100','0000000'],
-    '%': ['1100010','1100100','0001000','0010000','0100110','1000110','0000000','0000000','0000000'],
-    '!': ['0001100','0001100','0001100','0001100','0001100','0001100','0000000','0001100','0001100'],
-    '?': ['0011100','0100010','0000010','0000100','0001000','0001000','0000000','0001000','0000000'],
-    '_': ['0000000','0000000','0000000','0000000','0000000','0000000','0000000','0000000','1111111'],
-    ' ': ['0000000','0000000','0000000','0000000','0000000','0000000','0000000','0000000','0000000']
-};
-
-function cleanStr(s) {
-    return String(s || '')
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toUpperCase()
-        .replace(/[^A-Z0-9$:.,+\-/|()\[\]#%! ?_]/g, ' ');
-}
-
-const CRC_TABLE = (() => {
-    const t = new Uint32Array(256);
-    for (let n = 0; n < 256; n++) {
-        let c = n;
-        for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
-        t[n] = c >>> 0;
-    }
-    return t;
-})();
-
-function crc32(buf) {
-    let c = 0xffffffff;
-    for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
-    return (c ^ 0xffffffff) >>> 0;
-}
-
-function makeChunk(type, data) {
-    const len = Buffer.alloc(4);
-    len.writeUInt32BE(data.length, 0);
-    const typeBuf = Buffer.from(type, 'ascii');
-    const crcBuf = Buffer.alloc(4);
-    crcBuf.writeUInt32BE(crc32(Buffer.concat([typeBuf, data])), 0);
-    return Buffer.concat([len, typeBuf, data, crcBuf]);
-}
-
 function fetchBinaryBuffer(url, maxRedirects = 3) {
     return new Promise((resolve) => {
         if (!url || typeof url !== 'string' || !/^https?:\/\//i.test(url)) return resolve(null);
@@ -297,486 +212,456 @@ function fetchBinaryBuffer(url, maxRedirects = 3) {
     });
 }
 
-// Décodeur PNG minimal pour incruster la PP (avatar) dans le canvas bleu
-function decodeSimplePngRgba(buf) {
+async function loadAvatarImage(avatarUrl) {
+    if (!NapiCanvas || !avatarUrl) return null;
     try {
-        if (!buf || buf.length < 33) return null;
-        const sig = '89504e470d0a1a0a';
-        if (buf.subarray(0, 8).toString('hex') !== sig) return null;
-        let pos = 8, w = 0, h = 0, bitDepth = 0, colorType = 0;
-        const idatChunks = [];
-        while (pos + 12 <= buf.length) {
-            const len = buf.readUInt32BE(pos);
-            const type = buf.subarray(pos + 4, pos + 8).toString('ascii');
-            const data = buf.subarray(pos + 8, pos + 8 + len);
-            pos += 12 + len;
-            if (type === 'IHDR' && len >= 13) {
-                w = data.readUInt32BE(0);
-                h = data.readUInt32BE(4);
-                bitDepth = data[8];
-                colorType = data[9];
-            } else if (type === 'IDAT') {
-                idatChunks.push(data);
-            } else if (type === 'IEND') {
-                break;
-            }
-        }
-        if (!w || !h || w > 512 || h > 512 || bitDepth !== 8) return null;
-        const channels = colorType === 6 ? 4 : colorType === 2 ? 3 : 0;
-        if (!channels) return null;
-        const raw = zlib.inflateSync(Buffer.concat(idatChunks));
-        const stride = w * channels;
-        const out = Buffer.alloc(w * h * 4);
-        const prev = Buffer.alloc(stride);
-        const paeth = (a, b, c) => {
-            const p = a + b - c;
-            const pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
-            return (pa <= pb && pa <= pc) ? a : (pb <= pc ? b : c);
-        };
-        for (let y = 0; y < h; y++) {
-            const lineStart = y * (stride + 1);
-            const filter = raw[lineStart];
-            const cur = Buffer.alloc(stride);
-            for (let i = 0; i < stride; i++) {
-                const x = raw[lineStart + 1 + i];
-                const a = i >= channels ? cur[i - channels] : 0;
-                const b = prev[i];
-                const c = i >= channels ? prev[i - channels] : 0;
-                if (filter === 0) cur[i] = x;
-                else if (filter === 1) cur[i] = (x + a) & 0xff;
-                else if (filter === 2) cur[i] = (x + b) & 0xff;
-                else if (filter === 3) cur[i] = (x + ((a + b) >> 1)) & 0xff;
-                else if (filter === 4) cur[i] = (x + paeth(a, b, c)) & 0xff;
-                else cur[i] = x;
-            }
-            for (let x = 0; x < w; x++) {
-                const sIdx = x * channels;
-                const dIdx = (y * w + x) * 4;
-                out[dIdx] = cur[sIdx];
-                out[dIdx + 1] = cur[sIdx + 1];
-                out[dIdx + 2] = cur[sIdx + 2];
-                out[dIdx + 3] = channels === 4 ? cur[sIdx + 3] : 255;
-            }
-            cur.copy(prev);
-        }
-        return { w, h, rgba: out };
+        const pngUrl = avatarUrl.replace(/\.(webp|jpg|jpeg)/i, '.png');
+        const buf = await fetchBinaryBuffer(pngUrl);
+        if (!buf) return null;
+        return await NapiCanvas.loadImage(buf);
     } catch {
         return null;
     }
 }
 
-class KyuroBlueCanvas {
-    constructor(w, h) {
-        this.w = w;
-        this.h = h;
-        this.buf = Buffer.alloc(w * h * 4);
+function drawBlueThemeFrame(ctx, w, h, badgeText, pseudoText) {
+    const bgGrad = ctx.createLinearGradient(0, 0, w, h);
+    bgGrad.addColorStop(0, '#07152b');
+    bgGrad.addColorStop(0.55, '#0b2246');
+    bgGrad.addColorStop(1, '#0e3366');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, w, h);
+
+    // Halo bleu doux en haut à droite
+    const glow = ctx.createRadialGradient(w * 0.85, h * 0.16, 15, w * 0.85, h * 0.16, w * 0.45);
+    glow.addColorStop(0, 'rgba(56, 189, 248, 0.24)');
+    glow.addColorStop(1, 'rgba(56, 189, 248, 0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, w, h);
+
+    // Carte intérieure bleue arrondie
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(18, 18, w - 36, h - 36, 24);
+    ctx.fillStyle = 'rgba(9, 25, 54, 0.88)';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.55)';
+    ctx.stroke();
+    ctx.restore();
+
+    // Badge dynamique dimensionné au texte pour éviter tout dépassement
+    ctx.save();
+    ctx.font = '700 18px Sans, Arial, sans-serif';
+    const badgeMetrics = ctx.measureText(badgeText);
+    const badgeW = Math.max(150, Math.ceil(badgeMetrics.width + 32));
+    const badgeH = 36;
+    const badgeX = 38;
+    const badgeY = 34;
+
+    ctx.beginPath();
+    ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 10);
+    ctx.fillStyle = 'rgba(14, 165, 233, 0.22)';
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = 'rgba(125, 211, 252, 0.7)';
+    ctx.stroke();
+
+    ctx.fillStyle = '#e0f2fe';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(badgeText, badgeX + 16, badgeY + badgeH / 2 + 1);
+
+    if (pseudoText) {
+        ctx.font = '600 19px Sans, Arial, sans-serif';
+        ctx.fillStyle = '#bae6fd';
+        ctx.textAlign = 'right';
+        ctx.fillText(pseudoText, w - 42, badgeY + badgeH / 2 + 1);
     }
+    ctx.restore();
+}
 
-    px(x, y, r, g, b, a = 255) {
-        const ix = Math.round(x), iy = Math.round(y);
-        if (ix < 0 || iy < 0 || ix >= this.w || iy >= this.h) return;
-        const idx = (iy * this.w + ix) * 4;
-        const al = Math.max(0, Math.min(1, a / 255));
-        if (al >= 0.999) {
-            this.buf[idx] = r; this.buf[idx + 1] = g; this.buf[idx + 2] = b; this.buf[idx + 3] = 255;
-        } else {
-            const inv = 1 - al;
-            this.buf[idx] = Math.min(255, Math.round(r * al + this.buf[idx] * inv));
-            this.buf[idx + 1] = Math.min(255, Math.round(g * al + this.buf[idx + 1] * inv));
-            this.buf[idx + 2] = Math.min(255, Math.round(b * al + this.buf[idx + 2] * inv));
-            this.buf[idx + 3] = Math.max(this.buf[idx + 3], Math.round(a));
-        }
+function drawRoundedAvatar(ctx, avatarImg, cx, cy, radius) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius + 3, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(56, 189, 248, 0.85)';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
+
+    if (avatarImg) {
+        ctx.drawImage(avatarImg, cx - radius, cy - radius, radius * 2, radius * 2);
+    } else {
+        ctx.fillStyle = '#102c57';
+        ctx.fillRect(cx - radius, cy - radius, radius * 2, radius * 2);
+        ctx.fillStyle = '#e0f2fe';
+        ctx.font = '700 22px Sans, Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('KY', cx, cy + 1);
     }
-
-    roundRect(x, y, w, h, rad, r, g, b, a = 255) {
-        const maxR = Math.min(rad, w / 2, h / 2);
-        const x0 = Math.max(0, Math.floor(x));
-        const y0 = Math.max(0, Math.floor(y));
-        const x1 = Math.min(this.w - 1, Math.ceil(x + w));
-        const y1 = Math.min(this.h - 1, Math.ceil(y + h));
-        for (let py = y0; py <= y1; py++) {
-            for (let px = x0; px <= x1; px++) {
-                let cx = px;
-                if (px < x + maxR) cx = x + maxR;
-                else if (px > x + w - maxR) cx = x + w - maxR;
-                let cy = py;
-                if (py < y + maxR) cy = y + maxR;
-                else if (py > y + h - maxR) cy = y + h - maxR;
-                const d = Math.hypot(px - cx, py - cy);
-                if (d <= maxR + 0.65) {
-                    const fade = Math.min(1, Math.max(0, (maxR + 0.65 - d) / 1.3));
-                    this.px(px, py, r, g, b, a * fade);
-                }
-            }
-        }
-    }
-
-    roundBorder(x, y, w, h, rad, t, r, g, b, a = 255) {
-        const maxR = Math.min(rad, w / 2, h / 2);
-        const innerR = Math.max(0, maxR - t);
-        const x0 = Math.max(0, Math.floor(x - 1));
-        const y0 = Math.max(0, Math.floor(y - 1));
-        const x1 = Math.min(this.w - 1, Math.ceil(x + w + 1));
-        const y1 = Math.min(this.h - 1, Math.ceil(y + h + 1));
-        for (let py = y0; py <= y1; py++) {
-            for (let px = x0; px <= x1; px++) {
-                let ocx = px;
-                if (px < x + maxR) ocx = x + maxR;
-                else if (px > x + w - maxR) ocx = x + w - maxR;
-                let ocy = py;
-                if (py < y + maxR) ocy = y + maxR;
-                else if (py > y + h - maxR) ocy = y + h - maxR;
-                const od = Math.hypot(px - ocx, py - ocy);
-
-                const inX = px >= x + t && px <= x + w - t;
-                const inY = py >= y + t && py <= y + h - t;
-                let icx = px;
-                if (px < x + t + innerR) icx = x + t + innerR;
-                else if (px > x + w - t - innerR) icx = x + w - t - innerR;
-                let icy = py;
-                if (py < y + t + innerR) icy = y + t + innerR;
-                else if (py > y + h - t - innerR) icy = y + h - t - innerR;
-                const id = (inX && inY) ? Math.hypot(px - icx, py - icy) : 999;
-
-                if (od <= maxR + 0.65 && id >= innerR - 0.65) {
-                    const outF = Math.min(1, Math.max(0, (maxR + 0.65 - od) / 1.3));
-                    const inF = (inX && inY) ? Math.min(1, Math.max(0, (id - (innerR - 0.65)) / 1.3)) : 1;
-                    this.px(px, py, r, g, b, a * Math.min(outF, inF));
-                }
-            }
-        }
-    }
-
-    circle(cx, cy, rad, r, g, b, a = 255) {
-        const x0 = Math.max(0, Math.floor(cx - rad - 1));
-        const y0 = Math.max(0, Math.floor(cy - rad - 1));
-        const x1 = Math.min(this.w - 1, Math.ceil(cx + rad + 1));
-        const y1 = Math.min(this.h - 1, Math.ceil(cy + rad + 1));
-        for (let py = y0; py <= y1; py++) {
-            for (let px = x0; px <= x1; px++) {
-                const d = Math.hypot(px - cx, py - cy);
-                if (d <= rad + 0.7) {
-                    const f = Math.min(1, Math.max(0, (rad + 0.7 - d) / 1.4));
-                    this.px(px, py, r, g, b, a * f);
-                }
-            }
-        }
-    }
-
-    line(x0, y0, x1, y1, t, r, g, b, a = 255) {
-        const steps = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0), 1);
-        const rad = Math.max(1, t / 2);
-        for (let i = 0; i <= steps; i++) {
-            const p = i / steps;
-            this.circle(x0 + (x1 - x0) * p, y0 + (y1 - y0) * p, rad, r, g, b, a);
-        }
-    }
-
-    // Typographie propre et continue sans effet « points espacés »
-    text(str, x, y, scale, r, g, b, a = 255) {
-        const clean = cleanStr(str);
-        const step = 8 * scale;
-        for (let i = 0; i < clean.length; i++) {
-            const glyph = GLYPHS_7X9[clean[i]] || GLYPHS_7X9[' '];
-            const gx = x + i * step;
-            for (let row = 0; row < 9; row++) {
-                for (let col = 0; col < 7; col++) {
-                    if (glyph[row][col] === '1') {
-                        const px0 = gx + col * scale;
-                        const py0 = y + row * scale;
-                        // Fusionne les segments horizontaux adjacents pour un trait continu
-                        let spanW = scale;
-                        while (col + 1 < 7 && glyph[row][col + 1] === '1') {
-                            col++;
-                            spanW += scale;
-                        }
-                        this.roundRect(px0, py0, spanW + (scale > 2 ? 0.5 : 0), scale + (scale > 2 ? 0.5 : 0), Math.max(1, scale * 0.25), r, g, b, a);
-                    }
-                }
-            }
-        }
-    }
-
-    // Dessine la PP circulaire dans le card bleu
-    drawAvatarCircle(avatarData, cx, cy, radius) {
-        this.circle(cx, cy, radius + 3, 96, 165, 250, 255);
-        this.circle(cx, cy, radius, 15, 35, 72, 255);
-        if (!avatarData || !avatarData.rgba) {
-            this.text('KY', cx - 16, cy - 9, 2, 186, 230, 253, 255);
-            return;
-        }
-        const { w, h, rgba } = avatarData;
-        const x0 = Math.max(0, Math.floor(cx - radius));
-        const y0 = Math.max(0, Math.floor(cy - radius));
-        const x1 = Math.min(this.w - 1, Math.ceil(cx + radius));
-        const y1 = Math.min(this.h - 1, Math.ceil(cy + radius));
-        for (let py = y0; py <= y1; py++) {
-            for (let px = x0; px <= x1; px++) {
-                const dist = Math.hypot(px - cx, py - cy);
-                if (dist > radius + 0.6) continue;
-                const edgeAlpha = Math.min(1, Math.max(0, (radius + 0.6 - dist) / 1.2));
-                const u = ((px - (cx - radius)) / (radius * 2)) * (w - 1);
-                const v = ((py - (cy - radius)) / (radius * 2)) * (h - 1);
-                const sx = Math.max(0, Math.min(w - 1, Math.round(u)));
-                const sy = Math.max(0, Math.min(h - 1, Math.round(v)));
-                const idx = (sy * w + sx) * 4;
-                const srcA = (rgba[idx + 3] / 255) * edgeAlpha;
-                if (srcA > 0.01) {
-                    this.px(px, py, rgba[idx], rgba[idx + 1], rgba[idx + 2], srcA * 255);
-                }
-            }
-        }
-    }
-
-    // Thème bleu profond unifié Kyuro
-    blueCardBg(titleLabel = 'KYURO CASINO') {
-        for (let y = 0; y < this.h; y++) {
-            const ty = y / this.h;
-            for (let x = 0; x < this.w; x++) {
-                const tx = x / this.w;
-                let r = Math.round(5 + tx * 8 + ty * 4);
-                let g = Math.round(18 + tx * 28 + ty * 16);
-                let b = Math.round(44 + tx * 56 + ty * 34);
-                const glow = Math.hypot((x - this.w * 0.85) / (this.w * 0.45), (y - this.h * 0.2) / (this.h * 0.55));
-                if (glow < 1) {
-                    const k = (1 - glow) * 0.24;
-                    r = Math.min(255, Math.round(r + 56 * k));
-                    g = Math.min(255, Math.round(g + 189 * k));
-                    b = Math.min(255, Math.round(b + 248 * k));
-                }
-                this.px(x, y, r, g, b, 255);
-            }
-        }
-        this.roundRect(16, 16, this.w - 32, this.h - 32, 26, 8, 22, 52, 225);
-        this.roundBorder(16, 16, this.w - 32, this.h - 32, 26, 2.5, 56, 189, 248, 215);
-        this.roundRect(36, 28, 215, 34, 12, 14, 165, 233, 60);
-        this.roundBorder(36, 28, 215, 34, 12, 1.5, 56, 189, 248, 220);
-        this.text(titleLabel, 50, 36, 2, 224, 242, 254, 255);
-    }
-
-    toAttachment(filename) {
-        const stride = this.w * 4;
-        const raw = Buffer.alloc((stride + 1) * this.h);
-        for (let y = 0; y < this.h; y++) {
-            const rs = y * (stride + 1);
+    ctx.restore();
+}
+async function createCleanBlueCard(w, h, badgeText, pseudoText, avatarUrl, drawBodyFn, filename) {
+    if (!NapiCanvas) {
+        // Repli minimal si @napi-rs/canvas n'est pas installé
+        const raw = Buffer.alloc((w * 4 + 1) * h);
+        for (let y = 0; y < h; y++) {
+            const rs = y * (w * 4 + 1);
             raw[rs] = 0;
-            this.buf.copy(raw, rs + 1, y * stride, (y + 1) * stride);
+            for (let x = 0; x < w; x++) {
+                const idx = rs + 1 + x * 4;
+                raw[idx] = 10; raw[idx + 1] = 32; raw[idx + 2] = 68; raw[idx + 3] = 255;
+            }
         }
         const comp = zlib.deflateSync(raw, { level: 6 });
         const ihdr = Buffer.alloc(13);
-        ihdr.writeUInt32BE(this.w, 0); ihdr.writeUInt32BE(this.h, 4);
-        ihdr[8] = 8; ihdr[9] = 6;
+        ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 6;
+        const crc32 = (buf) => {
+            let c = 0xffffffff;
+            for (let i = 0; i < buf.length; i++) {
+                c = (c ^ buf[i]) >>> 0;
+                for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+            }
+            return (c ^ 0xffffffff) >>> 0;
+        };
+        const mk = (t, d) => {
+            const l = Buffer.alloc(4); l.writeUInt32BE(d.length, 0);
+            const tb = Buffer.from(t, 'ascii');
+            const cb = Buffer.alloc(4); cb.writeUInt32BE(crc32(Buffer.concat([tb, d])), 0);
+            return Buffer.concat([l, tb, d, cb]);
+        };
         const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
-        return new AttachmentBuilder(
-            Buffer.concat([sig, makeChunk('IHDR', ihdr), makeChunk('IDAT', comp), makeChunk('IEND', Buffer.alloc(0))]),
-            { name: filename }
-        );
+        return new AttachmentBuilder(Buffer.concat([sig, mk('IHDR', ihdr), mk('IDAT', comp), mk('IEND', Buffer.alloc(0))]), { name: filename });
     }
-}
-async function getAvatarDecoded(avatarUrl) {
-    if (!avatarUrl) return null;
-    const pngUrl = avatarUrl.includes('?') ? avatarUrl.replace(/\.(webp|jpg|jpeg)/i, '.png') : avatarUrl.replace(/\.(webp|jpg|jpeg)/i, '.png');
-    const buf = await fetchBinaryBuffer(pngUrl);
-    return decodeSimplePngRgba(buf);
+
+    const canvas = NapiCanvas.createCanvas(w, h);
+    const ctx = canvas.getContext('2d');
+    const avatarImg = await loadAvatarImage(avatarUrl);
+    drawBlueThemeFrame(ctx, w, h, badgeText, pseudoText);
+    await drawBodyFn(ctx, avatarImg, w, h);
+    const pngBuffer = await canvas.encode('png');
+    return new AttachmentBuilder(pngBuffer, { name: filename });
 }
 
 async function renderWalletBluePng(userObj, extra = '') {
-    const avatar = await getAvatarDecoded(userObj.avatarUrl);
-    const c = new KyuroBlueCanvas(960, 420);
-    c.blueCardBg('KYURO BANK');
-    c.drawAvatarCircle(avatar, 290, 45, 22);
-    c.text(userObj.username, 324, 36, 2, 186, 230, 253, 255);
-    c.text('PORTEFEUILLE & BANQUE', 36, 88, 3, 255, 255, 255, 255);
+    return createCleanBlueCard(960, 420, 'KYURO BANK', userObj.username, userObj.avatarUrl, async (ctx, av) => {
+        drawRoundedAvatar(ctx, av, 72, 128, 36);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '700 30px Sans, Arial, sans-serif';
+        ctx.fillText('PORTEFEUILLE & BANQUE', 126, 118);
+        ctx.fillStyle = '#7dd3fc';
+        ctx.font = '500 18px Sans, Arial, sans-serif';
+        ctx.fillText(extra || 'Compte joueur actif', 126, 148);
 
-    const totalAssets = (userObj.cash || 0) + (userObj.bank || 0);
-    const cards = [
-        { label: 'CASH DISPONIBLE', val: `${Math.floor(userObj.cash || 0).toLocaleString('fr-FR')} $` },
-        { label: 'COFFRE BANQUE', val: `${Math.floor(userObj.bank || 0).toLocaleString('fr-FR')} $` },
-        { label: 'FORTUNE TOTALE', val: `${Math.floor(totalAssets).toLocaleString('fr-FR')} $` }
-    ];
+        const total = (userObj.cash || 0) + (userObj.bank || 0);
+        const boxes = [
+            { title: 'CASH DISPONIBLE', val: `${Math.floor(userObj.cash || 0).toLocaleString('fr-FR')} $` },
+            { title: 'COFFRE BANQUE', val: `${Math.floor(userObj.bank || 0).toLocaleString('fr-FR')} $` },
+            { title: 'FORTUNE TOTALE', val: `${Math.floor(total).toLocaleString('fr-FR')} $` }
+        ];
+        boxes.forEach((b, i) => {
+            const x = 38 + i * 302;
+            const y = 192;
+            ctx.beginPath();
+            ctx.roundRect(x, y, 280, 174, 18);
+            ctx.fillStyle = 'rgba(13, 38, 82, 0.92)';
+            ctx.fill();
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
+            ctx.stroke();
 
-    cards.forEach((item, i) => {
-        const x = 36 + i * 304;
-        const y = 144;
-        c.roundRect(x, y, 280, 174, 20, 7, 20, 48, 240);
-        c.roundBorder(x, y, 280, 174, 20, 2, 56, 189, 248, 220);
-        c.roundRect(x + 18, y + 148, 244, 7, 3, 56, 189, 248, 230);
-        c.text(item.label, x + 18, y + 22, 2, 125, 211, 252, 255);
-        c.text(item.val, x + 18, y + 76, 3, 255, 255, 255, 255);
-    });
+            ctx.fillStyle = '#7dd3fc';
+            ctx.font = '700 15px Sans, Arial, sans-serif';
+            ctx.fillText(b.title, x + 22, y + 38);
 
-    c.text(extra || 'KYURO ECONOMY', 36, 352, 2, 186, 230, 253, 255);
-    return c.toAttachment('kyuro-wallet.png');
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '700 32px Sans, Arial, sans-serif';
+            ctx.fillText(b.val, x + 22, y + 98);
+        });
+    }, 'kyuro-wallet.png');
 }
 
 async function renderMonopolyBluePng(userObj, pendingRent, residentsCount, maxResidentsCount) {
-    const avatar = await getAvatarDecoded(userObj.avatarUrl);
-    const c = new KyuroBlueCanvas(960, 430);
-    c.blueCardBg('KYURO MONOPOLY');
-    c.drawAvatarCircle(avatar, 290, 45, 22);
-    c.text(userObj.username, 324, 36, 2, 186, 230, 253, 255);
+    return createCleanBlueCard(960, 430, 'KYURO MONOPOLY', userObj.username, userObj.avatarUrl, async (ctx, av) => {
+        drawRoundedAvatar(ctx, av, 72, 128, 34);
+        const bCount = (userObj.buildings || []).length;
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '700 28px Sans, Arial, sans-serif';
+        ctx.fillText(`IMMEUBLES : ${bCount}  •  HABITANTS : ${residentsCount}/${maxResidentsCount}`, 124, 122);
+        ctx.fillStyle = '#7dd3fc';
+        ctx.font = '600 19px Sans, Arial, sans-serif';
+        ctx.fillText(`LOYERS À RÉCOLTER : +${Math.floor(pendingRent).toLocaleString('fr-FR')} $`, 124, 152);
 
-    const bCount = (userObj.buildings || []).length;
-    c.text(`IMMEUBLES: ${bCount}  |  LOCATAIRES: ${residentsCount}/${maxResidentsCount}`, 36, 88, 3, 255, 255, 255, 255);
+        const baseY = 368;
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.65)';
+        ctx.fillRect(38, baseY, 884, 4);
 
-    c.roundRect(36, 326, 888, 5, 2, 56, 189, 248, 220);
-    const visualCount = Math.min(6, Math.max(1, bCount || 1));
-    const slotW = 840 / visualCount;
-    for (let i = 0; i < visualCount; i++) {
-        const bItem = userObj.buildings[i];
-        const bw = Math.min(118, Math.floor(slotW * 0.72));
-        const bx = Math.round(60 + i * slotW + (slotW - bw) / 2);
-        const bh = Math.round(78 + ((i + (bItem ? bItem.tier : 1)) % 4) * 24);
-        const by = 326 - bh;
-        c.roundRect(bx, by, bw, bh, 14, 10, 28, 66, 245);
-        c.roundBorder(bx, by, bw, bh, 14, 2, 56, 189, 248, 235);
-        for (let wy = by + 12; wy < 308; wy += 20) {
-            for (let wx = bx + 12; wx < bx + bw - 18; wx += 22) {
-                const lit = bCount > 0;
-                c.roundRect(wx, wy, 10, 8, 2, lit ? 125 : 30, lit ? 211 : 64, lit ? 252 : 120, 220);
+        const visualCount = Math.min(6, Math.max(1, bCount || 1));
+        const slotW = 840 / visualCount;
+        for (let i = 0; i < visualCount; i++) {
+            const bItem = userObj.buildings[i];
+            const bw = Math.min(120, Math.floor(slotW * 0.72));
+            const bx = Math.round(58 + i * slotW + (slotW - bw) / 2);
+            const bh = Math.round(86 + ((i + (bItem ? bItem.tier : 1)) % 4) * 26);
+            const by = baseY - bh;
+
+            ctx.beginPath();
+            ctx.roundRect(bx, by, bw, bh, 12);
+            ctx.fillStyle = '#102f63';
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#38bdf8';
+            ctx.stroke();
+
+            for (let wy = by + 16; wy < baseY - 18; wy += 22) {
+                for (let wx = bx + 14; wx < bx + bw - 20; wx += 24) {
+                    ctx.fillStyle = bCount > 0 ? '#bae6fd' : '#1e498a';
+                    ctx.fillRect(wx, wy, 11, 10);
+                }
             }
         }
-    }
-
-    c.text(`LOYERS A ENCAISSER: +${Math.floor(pendingRent).toLocaleString('fr-FR')} $`, 36, 354, 2, 125, 211, 252, 255);
-    return c.toAttachment('kyuro-monopoly.png');
+    }, 'kyuro-monopoly.png');
 }
 
 async function renderCryptoBluePng(userObj, symbol, name, price, history, userQty) {
-    const avatar = await getAvatarDecoded(userObj.avatarUrl);
-    const c = new KyuroBlueCanvas(960, 430);
-    c.blueCardBg('KYURO CRYPTO');
-    c.drawAvatarCircle(avatar, 290, 45, 22);
-    c.text(`${userObj.username} • ${symbol}`, 324, 36, 2, 186, 230, 253, 255);
-    c.text(`${name.toUpperCase()} - ${price.toLocaleString('fr-FR')} $`, 36, 88, 3, 255, 255, 255, 255);
+    return createCleanBlueCard(960, 430, `KYURO CRYPTO • ${symbol}`, userObj.username, userObj.avatarUrl, async (ctx, av) => {
+        drawRoundedAvatar(ctx, av, 72, 122, 30);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '700 28px Sans, Arial, sans-serif';
+        ctx.fillText(`${name} — ${price.toLocaleString('fr-FR')} $`, 118, 120);
+        ctx.fillStyle = '#7dd3fc';
+        ctx.font = '600 18px Sans, Arial, sans-serif';
+        ctx.fillText(`SOLDE : ${userQty} ${symbol}`, 118, 146);
 
-    const gx = 36, gy = 140, gw = 888, gh = 186;
-    c.roundRect(gx, gy, gw, gh, 18, 6, 16, 40, 245);
-    c.roundBorder(gx, gy, gw, gh, 18, 2, 56, 189, 248, 220);
+        const gx = 38, gy = 172, gw = 884, gh = 178;
+        ctx.beginPath();
+        ctx.roundRect(gx, gy, gw, gh, 16);
+        ctx.fillStyle = 'rgba(8, 22, 48, 0.92)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
+        ctx.stroke();
 
-    const vals = history.length > 1 ? history : [price, price];
-    const minV = Math.min(...vals), maxV = Math.max(...vals);
-    const span = Math.max(1, maxV - minV);
-    const pts = vals.map((v, i) => ({
-        x: gx + 26 + (i / (vals.length - 1)) * (gw - 52),
-        y: gy + gh - 26 - ((v - minV) / span) * (gh - 52)
-    }));
+        const vals = history.length > 1 ? history : [price, price];
+        const minV = Math.min(...vals), maxV = Math.max(...vals);
+        const span = Math.max(1, maxV - minV);
+        const pts = vals.map((v, i) => ({
+            x: gx + 28 + (i / (vals.length - 1)) * (gw - 56),
+            y: gy + gh - 26 - ((v - minV) / span) * (gh - 52)
+        }));
 
-    for (let i = 0; i < pts.length - 1; i++) {
-        c.line(pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y, 4, 56, 189, 248, 255);
-    }
-    for (const p of pts) {
-        c.circle(p.x, p.y, 5, 224, 242, 254, 255);
-    }
+        ctx.beginPath();
+        pts.forEach((p, idx) => idx === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 3.5;
+        ctx.stroke();
 
-    c.text(`PORTEFEUILLE: ${userQty} ${symbol}  |  MIN ${minV.toLocaleString('fr-FR')} $  MAX ${maxV.toLocaleString('fr-FR')} $`, 36, 354, 2, 186, 230, 253, 255);
-    return c.toAttachment('kyuro-crypto.png');
+        for (const p of pts) {
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+            ctx.fillStyle = '#e0f2fe';
+            ctx.fill();
+        }
+
+        ctx.fillStyle = '#bae6fd';
+        ctx.font = '600 17px Sans, Arial, sans-serif';
+        ctx.fillText(`MIN : ${minV.toLocaleString('fr-FR')} $   •   MAX : ${maxV.toLocaleString('fr-FR')} $`, 38, 378);
+    }, 'kyuro-crypto.png');
 }
 async function renderBlueActionPng(userObj, badge, headline, subline) {
-    const avatar = await getAvatarDecoded(userObj.avatarUrl);
-    const c = new KyuroBlueCanvas(960, 390);
-    c.blueCardBg(`KYURO ${badge}`);
-    c.drawAvatarCircle(avatar, 290, 45, 22);
-    c.text(userObj.username, 324, 36, 2, 186, 230, 253, 255);
-    c.text(headline, 36, 92, 3, 255, 255, 255, 255);
+    return createCleanBlueCard(960, 390, `KYURO • ${badge}`, userObj.username, userObj.avatarUrl, async (ctx, av) => {
+        drawRoundedAvatar(ctx, av, 76, 134, 36);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '700 30px Sans, Arial, sans-serif';
+        ctx.fillText(headline, 130, 142);
 
-    c.roundRect(36, 156, 888, 158, 20, 7, 20, 48, 240);
-    c.roundBorder(36, 156, 888, 158, 20, 2, 56, 189, 248, 225);
-    c.text(subline, 60, 220, 3, 224, 242, 254, 255);
-    return c.toAttachment('kyuro-action.png');
+        ctx.beginPath();
+        ctx.roundRect(38, 192, 884, 144, 18);
+        ctx.fillStyle = 'rgba(13, 38, 82, 0.92)';
+        ctx.fill();
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
+        ctx.stroke();
+
+        ctx.fillStyle = '#e0f2fe';
+        ctx.font = '700 28px Sans, Arial, sans-serif';
+        ctx.fillText(subline, 64, 273);
+    }, 'kyuro-action.png');
 }
 
 async function renderBlackjackBluePng(userObj, bet, pCards, pVal, dCards, dVal, statusText) {
-    const avatar = await getAvatarDecoded(userObj.avatarUrl);
-    const c = new KyuroBlueCanvas(960, 430);
-    c.blueCardBg('KYURO BLACKJACK');
-    c.drawAvatarCircle(avatar, 290, 45, 22);
-    c.text(`${userObj.username} - MISE ${bet.toLocaleString('fr-FR')} $`, 324, 36, 2, 186, 230, 253, 255);
-    c.text('TABLE VIP BLEUE', 36, 88, 3, 255, 255, 255, 255);
+    return createCleanBlueCard(960, 430, 'KYURO BLACKJACK', `${userObj.username} • ${bet.toLocaleString('fr-FR')} $`, userObj.avatarUrl, async (ctx, av) => {
+        drawRoundedAvatar(ctx, av, 72, 116, 28);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '700 24px Sans, Arial, sans-serif';
+        ctx.fillText(`TA MAIN (${pVal})`, 114, 124);
+        ctx.fillText(`CROUPIER (${dVal})`, 534, 124);
 
-    c.text(`TA MAIN (${pVal})`, 36, 144, 2, 125, 211, 252, 255);
-    pCards.slice(0, 5).forEach((card, i) => {
-        const cx = 36 + i * 88;
-        c.roundRect(cx, 174, 76, 114, 14, 12, 32, 74, 245);
-        c.roundBorder(cx, 174, 76, 114, 14, 2, 56, 189, 248, 245);
-        c.text(card, cx + 14, 222, 2, 255, 255, 255, 255);
-    });
+        pCards.slice(0, 5).forEach((card, i) => {
+            const cx = 38 + i * 88;
+            ctx.beginPath();
+            ctx.roundRect(cx, 152, 76, 114, 12);
+            ctx.fillStyle = '#11336b';
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#38bdf8';
+            ctx.stroke();
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '700 22px Sans, Arial, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(card, cx + 38, 217);
+            ctx.textAlign = 'left';
+        });
 
-    c.text(`CROUPIER (${dVal})`, 536, 144, 2, 186, 230, 253, 255);
-    dCards.slice(0, 4).forEach((card, i) => {
-        const cx = 536 + i * 88;
-        c.roundRect(cx, 174, 76, 114, 14, 9, 24, 56, 245);
-        c.roundBorder(cx, 174, 76, 114, 14, 2, 96, 165, 250, 235);
-        c.text(card, cx + 14, 222, 2, 224, 242, 254, 255);
-    });
+        dCards.slice(0, 4).forEach((card, i) => {
+            const cx = 534 + i * 88;
+            ctx.beginPath();
+            ctx.roundRect(cx, 152, 76, 114, 12);
+            ctx.fillStyle = '#0d2652';
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#7dd3fc';
+            ctx.stroke();
+            ctx.fillStyle = '#e0f2fe';
+            ctx.font = '700 22px Sans, Arial, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(card, cx + 38, 217);
+            ctx.textAlign = 'left';
+        });
 
-    c.roundRect(36, 324, 888, 54, 14, 7, 20, 48, 240);
-    c.roundBorder(36, 324, 888, 54, 14, 2, 56, 189, 248, 210);
-    c.text(statusText, 56, 341, 2, 255, 255, 255, 255);
-    return c.toAttachment('kyuro-blackjack.png');
+        ctx.beginPath();
+        ctx.roundRect(38, 304, 884, 64, 14);
+        ctx.fillStyle = 'rgba(13, 38, 82, 0.92)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.5)';
+        ctx.stroke();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '700 24px Sans, Arial, sans-serif';
+        ctx.fillText(statusText, 60, 344);
+    }, 'kyuro-blackjack.png');
 }
 
 async function renderRouletteBluePng(userObj, num, color, bet, statusText) {
-    const avatar = await getAvatarDecoded(userObj.avatarUrl);
-    const c = new KyuroBlueCanvas(960, 420);
-    c.blueCardBg('KYURO ROULETTE');
-    c.drawAvatarCircle(avatar, 290, 45, 22);
-    c.text(userObj.username, 324, 36, 2, 186, 230, 253, 255);
-    c.text(`NUMERO ${num} (${color.toUpperCase()})`, 36, 88, 3, 255, 255, 255, 255);
+    return createCleanBlueCard(960, 420, 'KYURO ROULETTE', userObj.username, userObj.avatarUrl, async (ctx, av) => {
+        drawRoundedAvatar(ctx, av, 72, 122, 30);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '700 28px Sans, Arial, sans-serif';
+        ctx.fillText(`RÉSULTAT : ${num} (${color.toUpperCase()})`, 118, 130);
 
-    c.circle(158, 234, 94, 56, 189, 248, 230);
-    c.circle(158, 234, 74, 7, 20, 48, 255);
-    c.text(`${num}`, num >= 10 ? 130 : 144, 218, 4, 255, 255, 255, 255);
+        // Cercle numéro
+        ctx.beginPath();
+        ctx.arc(154, 258, 76, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(14, 165, 233, 0.25)';
+        ctx.fill();
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = '#38bdf8';
+        ctx.stroke();
 
-    c.roundRect(296, 150, 628, 170, 20, 7, 20, 48, 240);
-    c.roundBorder(296, 150, 628, 170, 20, 2, 56, 189, 248, 225);
-    c.text(`MISE: ${bet.toLocaleString('fr-FR')} $`, 322, 182, 2, 125, 211, 252, 255);
-    c.text(statusText, 322, 240, 3, 255, 255, 255, 255);
-    return c.toAttachment('kyuro-roulette.png');
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '700 44px Sans, Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`${num}`, 154, 260);
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+
+        // Panneau résultat large sans débordement
+        ctx.beginPath();
+        ctx.roundRect(266, 176, 656, 168, 18);
+        ctx.fillStyle = 'rgba(13, 38, 82, 0.92)';
+        ctx.fill();
+        ctx.lineWidth = 1.8;
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.55)';
+        ctx.stroke();
+
+        ctx.fillStyle = '#7dd3fc';
+        ctx.font = '700 20px Sans, Arial, sans-serif';
+        ctx.fillText(`MISE : ${bet.toLocaleString('fr-FR')} $`, 294, 224);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '700 30px Sans, Arial, sans-serif';
+        ctx.fillText(statusText, 294, 286);
+    }, 'kyuro-roulette.png');
 }
 
 async function renderSlotsBluePng(userObj, reels, bet, statusText) {
-    const avatar = await getAvatarDecoded(userObj.avatarUrl);
-    const c = new KyuroBlueCanvas(960, 420);
-    c.blueCardBg('KYURO SLOTS');
-    c.drawAvatarCircle(avatar, 290, 45, 22);
-    c.text(`${userObj.username} - MISE ${bet.toLocaleString('fr-FR')} $`, 324, 36, 2, 186, 230, 253, 255);
-    c.text('MACHINE A SOUS BLEUE', 36, 88, 3, 255, 255, 255, 255);
+    return createCleanBlueCard(960, 420, 'KYURO SLOTS', `${userObj.username} • ${bet.toLocaleString('fr-FR')} $`, userObj.avatarUrl, async (ctx, av) => {
+        drawRoundedAvatar(ctx, av, 72, 120, 28);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '700 26px Sans, Arial, sans-serif';
+        ctx.fillText(statusText, 114, 128);
 
-    const labels = { '💎': 'GEM', '💠': 'BLU', '🪙': 'USD', '⚡': 'ZAP', '🔥': 'HOT' };
-    reels.forEach((sym, i) => {
-        const x = 56 + i * 292;
-        c.roundRect(x, 146, 264, 162, 20, 7, 20, 48, 245);
-        c.roundBorder(x, 146, 264, 162, 20, 2, 56, 189, 248, 235);
-        c.text(labels[sym] || 'WIN', x + 78, 210, 4, 255, 255, 255, 255);
-    });
+        const labels = { '💎': 'GEM', '💠': 'BLU', '🪙': 'USD', '⚡': 'ZAP', '🔥': 'HOT' };
+        reels.forEach((sym, i) => {
+            const x = 48 + i * 296;
+            ctx.beginPath();
+            ctx.roundRect(x, 174, 272, 166, 18);
+            ctx.fillStyle = 'rgba(13, 38, 82, 0.92)';
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#38bdf8';
+            ctx.stroke();
 
-    c.text(statusText, 36, 344, 2, 224, 242, 254, 255);
-    return c.toAttachment('kyuro-slots.png');
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '700 42px Sans, Arial, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(labels[sym] || 'WIN', x + 136, 257);
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'alphabetic';
+        });
+    }, 'kyuro-slots.png');
 }
 
 async function renderLeaderboardBluePng(entries) {
-    const c = new KyuroBlueCanvas(960, 440);
-    c.blueCardBg('KYURO TOP');
-    c.text('CLASSEMENT FORTUNES ($)', 36, 88, 3, 255, 255, 255, 255);
+    return createCleanBlueCard(960, 450, 'KYURO TOP', 'CLASSEMENT FORTUNES ($)', null, async (ctx) => {
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '700 28px Sans, Arial, sans-serif';
+        ctx.fillText('TOP JOUEURS DU SERVEUR', 38, 116);
 
-    const top = entries.slice(0, 5);
-    if (top.length === 0) {
-        c.text('AUCUN JOUEUR ENREGISTRE', 36, 172, 2, 186, 230, 253, 255);
-    } else {
+        const top = entries.slice(0, 5);
+        if (top.length === 0) {
+            ctx.fillStyle = '#bae6fd';
+            ctx.font = '600 22px Sans, Arial, sans-serif';
+            ctx.fillText('Aucun joueur enregistré pour le moment.', 38, 190);
+            return;
+        }
+
+        const maxVal = Math.max(1, top[0].total);
         top.forEach((e, idx) => {
-            const y = 146 + idx * 48;
-            c.roundRect(36, y - 6, 888, 38, 12, 7, 20, 48, 235);
-            c.roundBorder(36, y - 6, 888, 38, 12, 1.5, 56, 189, 248, 180);
-            c.text(`#${idx + 1} ${e.name} - ${Math.floor(e.total).toLocaleString('fr-FR')} $`, 54, y + 4, 2, idx === 0 ? 224 : 186, idx === 0 ? 242 : 230, 254, 255);
+            const y = 148 + idx * 54;
+            ctx.beginPath();
+            ctx.roundRect(38, y, 884, 44, 12);
+            ctx.fillStyle = 'rgba(13, 38, 82, 0.9)';
+            ctx.fill();
+
+            ctx.fillStyle = idx === 0 ? '#7dd3fc' : '#e0f2fe';
+            ctx.font = '700 20px Sans, Arial, sans-serif';
+            ctx.fillText(`#${idx + 1}  ${e.name}`, 56, y + 29);
+
+            // Barre de progression bleue
+            const barX = 430, barY = y + 15, barW = 240, barH = 12;
+            ctx.fillStyle = 'rgba(30, 64, 115, 0.8)';
+            ctx.fillRect(barX, barY, barW, barH);
+            const ratio = Math.max(0.06, Math.min(1, e.total / maxVal));
+            ctx.fillStyle = '#38bdf8';
+            ctx.fillRect(barX, barY, Math.round(barW * ratio), barH);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '700 20px Sans, Arial, sans-serif';
+            ctx.textAlign = 'right';
+            ctx.fillText(`${Math.floor(e.total).toLocaleString('fr-FR')} $`, 904, y + 29);
+            ctx.textAlign = 'left';
         });
-    }
-    return c.toAttachment('kyuro-leaderboard.png');
+    }, 'kyuro-leaderboard.png');
 }
-// Embed / Container V2 gris foncé moderne style carte Discord
+// Container V2 gris unifié sans barre latérale colorée à gauche
 function buildContainerV2({ title, body, footer }) {
     return new ContainerBuilder()
-        .setAccentColor(0x313338)
         .addTextDisplayComponents(
             new TextDisplayBuilder().setContent(`## ${title}\n${body}`)
         )
@@ -813,7 +698,8 @@ function getHelpSection(tab = 'all') {
                 '`*balance [@membre]` — Solde cash, banque & fortune',
                 '`*deposit <montant|all>` — Déposer en banque',
                 '`*withdraw <montant|all>` — Retirer en cash',
-                '`*work` • `*daily` • `*crime` • `*rob <@membre>` • `*pay <@membre> <montant|all>`'
+                '`*work` • `*daily` • `*crime` • `*mine` • `*fish`',
+                '`*rob <@membre>` • `*pay <@membre> <montant|all>` • `*gift <@membre> <montant|all>`'
             ].join('\n')
         };
     }
@@ -824,18 +710,18 @@ function getHelpSection(tab = 'all') {
                 '`*blackjack <mise|all>` (`*bj`) — Table interactive',
                 '`*roulette <rouge|noir|vert|pair|impair> <mise|all>` (`*rl`)',
                 '`*slots <mise|all>` (`*slot`) • `*coinflip <pile|face> <mise|all>` (`*cf`)',
-                '`*dice <1-6> <mise|all>` • `*crash <mise|all>`',
+                '`*dice <1-6> <mise|all>` • `*crash <mise|all>` • `*spin <mise|all>`',
                 '`*duel <@membre> <mise|all>` • `*scratch <mise|all>` • `*lottery [buy <mise>|draw]`'
             ].join('\n')
         };
     }
     if (tab === 'biz') {
         return {
-            title: '🏙️ Kyuro • Monopoly, Crypto & Hack',
+            title: '🏙️ Kyuro • Monopoly, Crypto & Actions',
             body: [
-                '`*monopoly [shop|buy <id>|movein <@proprio>|collect]` — Immeubles & locataires en `$`',
+                '`*monopoly [shop|buy <id>|movein <@proprio>|collect]` — Immeubles & locataires',
                 '`*crypto [SYM|buy <SYM> <qté>|sell <SYM> <qté>]` — Graphique live (`BTC`, `ETH`, `KYR`, `SOL`)',
-                '`*heist <@membre>` — Braquage risqué • `*hack <@membre>` • `*leaderboard` (`*lb`)'
+                '`*heist <@membre>` • `*hack <@membre>` • `*leaderboard` (`*lb`)'
             ].join('\n')
         };
     }
@@ -852,11 +738,11 @@ function getHelpSection(tab = 'all') {
     return {
         title: '💠 Kyuro Casino • Menu Principal',
         body: [
-            'Choisis une catégorie ci-dessous pour voir les commandes :',
+            'Choisis un onglet ci-dessous pour explorer les commandes :',
             '',
-            '`💰 Économie` — `*balance` `*deposit` `*withdraw` `*work` `*daily` `*crime` `*rob` `*pay`',
-            '`🎰 Gamble & Fun` — `*bj` `*roulette` `*slots` `*cf` `*dice` `*crash` `*duel` `*scratch` `*lottery`',
-            '`🏙️ Monopoly & Crypto` — `*monopoly` `*crypto` `*heist` `*hack` `*lb`',
+            '`💰 Économie` — `*balance` `*deposit` `*withdraw` `*work` `*daily` `*crime` `*mine` `*fish` `*pay` `*gift`',
+            '`🎰 Gamble & Fun` — `*bj` `*roulette` `*slots` `*cf` `*dice` `*crash` `*spin` `*duel` `*scratch` `*lottery`',
+            '`🏙️ Monopoly & Crypto` — `*monopoly` `*crypto` `*heist` `*hack` `*rob` `*lb`',
             '`👑 Owner` — `*setcasino` `*setmoney` `*reseteconomy`'
         ].join('\n')
     };
@@ -870,7 +756,6 @@ function helpButtons(activeTab = 'all') {
         new ButtonBuilder().setCustomId('help_owner').setLabel('Owner').setStyle(activeTab === 'owner' ? ButtonStyle.Primary : ButtonStyle.Secondary)
     );
 }
-
 function getBuildingStats(ownerObj) {
     const list = Array.isArray(ownerObj.buildings) ? ownerObj.buildings : [];
     const maxRes = list.reduce((acc, b) => acc + (b.maxResidents || 0), 0);
@@ -928,13 +813,12 @@ async function handleMonopoly(message, args) {
             tier: tpl.tier,
             rentPerResident: tpl.rentPerResident,
             maxResidents: tpl.maxResidents,
-            residents: 1, // 1 résident initial s'installe dès l'achat
+            residents: 1,
             lastCollect: Date.now()
         });
         saveData();
         const st = getBuildingStats(u);
-        const att = await renderMonopolyBluePng(u, computePendingRent(u), st.residentsTotal, st.maxRes);
-        return replyImageOnly(message, att);
+        return replyImageOnly(message, await renderMonopolyBluePng(u, computePendingRent(u), st.residentsTotal, st.maxRes));
     }
 
     if (sub === 'movein' || sub === 'habiter') {
@@ -967,7 +851,7 @@ async function handleMonopoly(message, args) {
         saveData();
         return replyContainer(message, {
             title: '🏠 Nouveau locataire',
-            body: `Tu habites désormais dans **${freeBuilding.name}** chez **${host.username}** (caution **${formatMoney(depositFee)}** versée). Chaque habitant génère des loyers en \`$\` au propriétaire.`
+            body: `Tu habites désormais dans **${freeBuilding.name}** chez **${host.username}** (caution **${formatMoney(depositFee)}** versée).`
         });
     }
 
@@ -978,18 +862,17 @@ async function handleMonopoly(message, args) {
         u.cash += pending;
         saveData();
         const st = getBuildingStats(u);
-        const att = await renderMonopolyBluePng(u, 0, st.residentsTotal, st.maxRes);
-        return replyImageOnly(message, att);
+        return replyImageOnly(message, await renderMonopolyBluePng(u, 0, st.residentsTotal, st.maxRes));
     }
 
     const st = getBuildingStats(u);
-    const att = await renderMonopolyBluePng(u, computePendingRent(u), st.residentsTotal, st.maxRes);
-    return replyImageOnly(message, att);
+    return replyImageOnly(message, await renderMonopolyBluePng(u, computePendingRent(u), st.residentsTotal, st.maxRes));
 }
+
 async function handleBalance(message) {
     const target = message.mentions.users.first() || message.author;
     const u = getUser(target.id, target);
-    const extra = u.buildings.length > 0 ? `IMMEUBLES: ${u.buildings.length} BIEN(S)` : 'AUCUN IMMEUBLE';
+    const extra = u.buildings.length > 0 ? `IMMEUBLES : ${u.buildings.length} BIEN(S)` : 'AUCUN IMMEUBLE';
     return replyImageOnly(message, await renderWalletBluePng(u, extra));
 }
 
@@ -998,7 +881,7 @@ async function handleDeposit(message, args) {
     const amt = parseAmount(args[0], u.cash);
     if (!amt || u.cash < amt) return replyContainer(message, { title: '🏦 Dépôt', body: 'Utilisation : `*deposit <montant|all>`' });
     u.cash -= amt; u.bank += amt; saveData();
-    return replyImageOnly(message, await renderWalletBluePng(u, `DEPOT BANQUE: +${amt.toLocaleString('fr-FR')} $`));
+    return replyImageOnly(message, await renderWalletBluePng(u, `DÉPÔT BANQUE : +${amt.toLocaleString('fr-FR')} $`));
 }
 
 async function handleWithdraw(message, args) {
@@ -1006,7 +889,7 @@ async function handleWithdraw(message, args) {
     const amt = parseAmount(args[0], u.bank);
     if (!amt || u.bank < amt) return replyContainer(message, { title: '🏧 Retrait', body: 'Utilisation : `*withdraw <montant|all>`' });
     u.bank -= amt; u.cash += amt; saveData();
-    return replyImageOnly(message, await renderWalletBluePng(u, `RETRAIT CASH: +${amt.toLocaleString('fr-FR')} $`));
+    return replyImageOnly(message, await renderWalletBluePng(u, `RETRAIT CASH : +${amt.toLocaleString('fr-FR')} $`));
 }
 
 async function handleWork(message) {
@@ -1016,7 +899,7 @@ async function handleWork(message) {
     u.cooldowns.work = now;
     const gain = Math.floor(Math.random() * 900) + 500;
     u.cash += gain; saveData();
-    return replyImageOnly(message, await renderBlueActionPng(u, 'WORK', `SALAIRE: +${gain.toLocaleString('fr-FR')} $`, `CASH: ${u.cash.toLocaleString('fr-FR')} $`));
+    return replyImageOnly(message, await renderBlueActionPng(u, 'WORK', `SALAIRE : +${gain.toLocaleString('fr-FR')} $`, `CASH : ${u.cash.toLocaleString('fr-FR')} $`));
 }
 
 async function handleDaily(message) {
@@ -1026,7 +909,7 @@ async function handleDaily(message) {
     u.cooldowns.daily = now;
     const gain = 3000;
     u.cash += gain; saveData();
-    return replyImageOnly(message, await renderBlueActionPng(u, 'DAILY', `BONUS: +${gain.toLocaleString('fr-FR')} $`, `CASH: ${u.cash.toLocaleString('fr-FR')} $`));
+    return replyImageOnly(message, await renderBlueActionPng(u, 'DAILY', `BONUS : +${gain.toLocaleString('fr-FR')} $`, `CASH : ${u.cash.toLocaleString('fr-FR')} $`));
 }
 
 async function handleCrime(message) {
@@ -1038,7 +921,49 @@ async function handleCrime(message) {
     const amt = ok ? Math.floor(Math.random() * 1500) + 650 : Math.min(u.cash, 700);
     if (ok) u.cash += amt; else u.cash -= amt;
     saveData();
-    return replyImageOnly(message, await renderBlueActionPng(u, 'CRIME', ok ? `COUP REUSSI +${amt.toLocaleString('fr-FR')} $` : `AMENDE -${amt.toLocaleString('fr-FR')} $`, `CASH: ${u.cash.toLocaleString('fr-FR')} $`));
+    return replyImageOnly(message, await renderBlueActionPng(u, 'CRIME', ok ? `COUP RÉUSSI +${amt.toLocaleString('fr-FR')} $` : `AMENDE -${amt.toLocaleString('fr-FR')} $`, `CASH : ${u.cash.toLocaleString('fr-FR')} $`));
+}
+
+async function handleMine(message) {
+    const u = getUser(message.author.id, message.author);
+    const now = Date.now(), cd = 15 * 60 * 1000;
+    if (now - u.cooldowns.mine < cd) return replyContainer(message, { title: '⛏️ Mine', body: `Patiente **${formatCooldown(cd - (now - u.cooldowns.mine))}**.` });
+    u.cooldowns.mine = now;
+    const ores = ['FER', 'OR', 'DIAMANT', 'CRISTAL KYR'];
+    const ore = ores[Math.floor(Math.random() * ores.length)];
+    const gain = Math.floor(Math.random() * 1100) + 450;
+    u.cash += gain; saveData();
+    return replyImageOnly(message, await renderBlueActionPng(u, 'MINE', `FILON : ${ore}`, `RÉCOLTE : +${gain.toLocaleString('fr-FR')} $`));
+}
+
+async function handleFish(message) {
+    const u = getUser(message.author.id, message.author);
+    const now = Date.now(), cd = 15 * 60 * 1000;
+    if (now - u.cooldowns.fish < cd) return replyContainer(message, { title: '🎣 Pêche', body: `Patiente **${formatCooldown(cd - (now - u.cooldowns.fish))}**.` });
+    u.cooldowns.fish = now;
+    const catches = ['CARPE ROYALE', 'BROCHET', 'COFFRE BLEU', 'PERLE'];
+    const item = catches[Math.floor(Math.random() * catches.length)];
+    const gain = Math.floor(Math.random() * 950) + 400;
+    u.cash += gain; saveData();
+    return replyImageOnly(message, await renderBlueActionPng(u, 'FISH', `PRISE : ${item}`, `GAIN : +${gain.toLocaleString('fr-FR')} $`));
+}
+
+async function handleGift(message, args) {
+    const s = getUser(message.author.id, message.author);
+    const target = message.mentions.users.first();
+    const amt = parseAmount(args[1], s.cash);
+    if (!target || target.bot || target.id === message.author.id || !amt || s.cash < amt) {
+        return replyContainer(message, { title: '🎁 Cadeau', body: 'Utilisation : `*gift <@membre> <montant|all>`' });
+    }
+    const r = getUser(target.id, target);
+    const bonus = Math.max(50, Math.floor(amt * 0.1));
+    s.cash -= amt;
+    r.cash += amt + bonus;
+    saveData();
+    return replyContainer(message, {
+        title: '🎁 Cadeau envoyé',
+        body: `Tu as offert **${formatMoney(amt)}** à **${r.username}** (+**${formatMoney(bonus)}** bonus Kyuro).`
+    });
 }
 
 async function handleRob(message) {
@@ -1055,7 +980,7 @@ async function handleRob(message) {
     const amt = ok ? Math.min(def.cash, Math.max(200, Math.floor(def.cash * 0.25))) : Math.min(atk.cash, 500);
     if (ok) { def.cash -= amt; atk.cash += amt; } else { atk.cash -= amt; }
     saveData();
-    return replyImageOnly(message, await renderBlueActionPng(atk, 'ROB', ok ? `VOLE ${amt.toLocaleString('fr-FR')} $` : `RATE -${amt.toLocaleString('fr-FR')} $`, `CASH: ${atk.cash.toLocaleString('fr-FR')} $`));
+    return replyImageOnly(message, await renderBlueActionPng(atk, 'ROB', ok ? `VOLÉ ${amt.toLocaleString('fr-FR')} $` : `RATÉ -${amt.toLocaleString('fr-FR')} $`, `CIBLE : ${def.username}`));
 }
 
 async function handleCrypto(message, args) {
@@ -1098,7 +1023,7 @@ async function handleHack(message) {
     const amt = ok ? Math.min(def.cash, Math.max(250, Math.floor(def.cash * 0.2))) : Math.min(atk.cash, 450);
     if (ok) { def.cash -= amt; atk.cash += amt; atk.stats.hacksSuccess += 1; } else { atk.cash -= amt; }
     saveData();
-    return replyImageOnly(message, await renderBlueActionPng(atk, 'HACK', ok ? `BREACH +${amt.toLocaleString('fr-FR')} $` : `TRACE -${amt.toLocaleString('fr-FR')} $`, `CIBLE: ${def.username}`));
+    return replyImageOnly(message, await renderBlueActionPng(atk, 'HACK', ok ? `BREACH +${amt.toLocaleString('fr-FR')} $` : `TRACE -${amt.toLocaleString('fr-FR')} $`, `CIBLE : ${def.username}`));
 }
 
 async function handleHeist(message) {
@@ -1114,7 +1039,7 @@ async function handleHeist(message) {
     const amt = ok ? Math.min(def.bank, Math.max(500, Math.floor(def.bank * 0.22))) : Math.min(atk.cash, 900);
     if (ok) { def.bank -= amt; atk.cash += amt; } else { atk.cash -= amt; }
     saveData();
-    return replyImageOnly(message, await renderBlueActionPng(atk, 'HEIST', ok ? `CASSE +${amt.toLocaleString('fr-FR')} $` : `ALARME -${amt.toLocaleString('fr-FR')} $`, `BANQUE: ${def.username}`));
+    return replyImageOnly(message, await renderBlueActionPng(atk, 'HEIST', ok ? `CASSE +${amt.toLocaleString('fr-FR')} $` : `ALARME -${amt.toLocaleString('fr-FR')} $`, `BANQUE : ${def.username}`));
 }
 
 async function handleScratch(message, args) {
@@ -1127,7 +1052,20 @@ async function handleScratch(message, args) {
     const gain = Math.floor(bet * m);
     if (gain > 0) { u.cash += gain; u.stats.wins += 1; } else { u.stats.losses += 1; }
     saveData();
-    return replyImageOnly(message, await renderBlueActionPng(u, 'SCRATCH', `MULTIPLICATEUR X${m}`, gain > 0 ? `GAIN: +${gain.toLocaleString('fr-FR')} $` : `TICKET VIDE -${bet.toLocaleString('fr-FR')} $`));
+    return replyImageOnly(message, await renderBlueActionPng(u, 'SCRATCH', `MULTIPLICATEUR X${m}`, gain > 0 ? `GAIN : +${gain.toLocaleString('fr-FR')} $` : `PERDU : -${bet.toLocaleString('fr-FR')} $`));
+}
+
+async function handleSpin(message, args) {
+    const u = getUser(message.author.id, message.author);
+    const bet = parseAmount(args[0], u.cash);
+    if (!bet || u.cash < bet) return replyContainer(message, { title: '🎡 Spin', body: 'Utilisation : `*spin <mise|all>`' });
+    u.cash -= bet; u.stats.wagered += bet;
+    const wheel = [0, 0.5, 1, 1.2, 2, 2.5, 4];
+    const m = wheel[Math.floor(Math.random() * wheel.length)];
+    const gain = Math.floor(bet * m);
+    if (gain > 0) { u.cash += gain; u.stats.wins += 1; } else { u.stats.losses += 1; }
+    saveData();
+    return replyImageOnly(message, await renderBlueActionPng(u, 'SPIN', `ROUE : X${m}`, gain > 0 ? `REÇU : +${gain.toLocaleString('fr-FR')} $` : `MISE PERDUE : -${bet.toLocaleString('fr-FR')} $`));
 }
 
 async function handleLottery(message, args) {
@@ -1149,7 +1087,7 @@ async function handleLottery(message, args) {
             db.lotteryPot = 5000;
             u.cash += prize;
             saveData();
-            return replyImageOnly(message, await renderBlueActionPng(u, 'LOTTERY', `JACKPOT +${prize.toLocaleString('fr-FR')} $`, `CASH: ${u.cash.toLocaleString('fr-FR')} $`));
+            return replyImageOnly(message, await renderBlueActionPng(u, 'LOTTERY', `JACKPOT +${prize.toLocaleString('fr-FR')} $`, `CASH : ${u.cash.toLocaleString('fr-FR')} $`));
         }
         saveData();
         return replyContainer(message, { title: '🎟️ Tirage manqué', body: `Pas cette fois. Pot actuel : **${formatMoney(db.lotteryPot)}**.` });
@@ -1226,7 +1164,7 @@ async function handleRoulette(message, args) {
     const win = Math.floor(bet * mult);
     if (win > 0) { u.cash += win; u.stats.wins += 1; } else { u.stats.losses += 1; }
     saveData();
-    return replyImageOnly(message, await renderRouletteBluePng(u, num, color, bet, win > 0 ? `GAGNE: +${win.toLocaleString('fr-FR')} $` : `PERDU: -${bet.toLocaleString('fr-FR')} $`));
+    return replyImageOnly(message, await renderRouletteBluePng(u, num, color, bet, win > 0 ? `GAGNÉ : +${win.toLocaleString('fr-FR')} $` : `PERDU : -${bet.toLocaleString('fr-FR')} $`));
 }
 
 async function handleSlots(message, args) {
@@ -1240,7 +1178,7 @@ async function handleSlots(message, args) {
     const win = Math.floor(bet * mult);
     if (win > 0) { u.cash += win; u.stats.wins += 1; } else { u.stats.losses += 1; }
     saveData();
-    return replyImageOnly(message, await renderSlotsBluePng(u, r, bet, win > 0 ? `GAIN: +${win.toLocaleString('fr-FR')} $` : `PERTE: -${bet.toLocaleString('fr-FR')} $`));
+    return replyImageOnly(message, await renderSlotsBluePng(u, r, bet, win > 0 ? `GAIN : +${win.toLocaleString('fr-FR')} $` : `PERTE : -${bet.toLocaleString('fr-FR')} $`));
 }
 
 async function handleCoinflip(message, args) {
@@ -1253,7 +1191,7 @@ async function handleCoinflip(message, args) {
     const won = out === side;
     if (won) { u.cash += bet * 2; u.stats.wins += 1; } else { u.stats.losses += 1; }
     saveData();
-    return replyImageOnly(message, await renderBlueActionPng(u, 'COINFLIP', `PIECE: ${out.toUpperCase()}`, won ? `GAGNE: +${(bet * 2).toLocaleString('fr-FR')} $` : `PERDU: -${bet.toLocaleString('fr-FR')} $`));
+    return replyImageOnly(message, await renderBlueActionPng(u, 'COINFLIP', `PIÈCE : ${out.toUpperCase()}`, won ? `GAGNÉ : +${(bet * 2).toLocaleString('fr-FR')} $` : `PERDU : -${bet.toLocaleString('fr-FR')} $`));
 }
 
 async function handleDice(message, args) {
@@ -1266,7 +1204,7 @@ async function handleDice(message, args) {
     const won = roll === guess;
     if (won) { u.cash += bet * 5; u.stats.wins += 1; } else { u.stats.losses += 1; }
     saveData();
-    return replyImageOnly(message, await renderBlueActionPng(u, 'DICE', `DE: ${roll} (CHOIX ${guess})`, won ? `JACKPOT X5: +${(bet * 5).toLocaleString('fr-FR')} $` : `PERDU: -${bet.toLocaleString('fr-FR')} $`));
+    return replyImageOnly(message, await renderBlueActionPng(u, 'DICE', `DÉ : ${roll} (CHOIX ${guess})`, won ? `JACKPOT X5 : +${(bet * 5).toLocaleString('fr-FR')} $` : `PERDU : -${bet.toLocaleString('fr-FR')} $`));
 }
 
 async function handleCrash(message, args) {
@@ -1280,7 +1218,7 @@ async function handleCrash(message, args) {
     const pay = won ? Math.floor(bet * targetMult) : 0;
     if (won) { u.cash += pay; u.stats.wins += 1; } else { u.stats.losses += 1; }
     saveData();
-    return replyImageOnly(message, await renderBlueActionPng(u, 'CRASH', `X${targetMult} VS CRASH X${crashAt}`, won ? `ENCAISSE: +${pay.toLocaleString('fr-FR')} $` : `CRASH: -${bet.toLocaleString('fr-FR')} $`));
+    return replyImageOnly(message, await renderBlueActionPng(u, 'CRASH', `X${targetMult} VS CRASH X${crashAt}`, won ? `ENCAISSÉ : +${pay.toLocaleString('fr-FR')} $` : `CRASH : -${bet.toLocaleString('fr-FR')} $`));
 }
 
 client.on('interactionCreate', async interaction => {
@@ -1333,7 +1271,7 @@ client.on('interactionCreate', async interaction => {
             finished = true;
             while (handValue(game.dCards) < 17) game.dCards.push(drawCard());
             const dv = handValue(game.dCards);
-            if (dv === 21) { u.cash += game.bet; status = 'EGALITE 21'; }
+            if (dv === 21) { u.cash += game.bet; status = 'ÉGALITÉ 21'; }
             else { u.cash += game.bet * 2; u.stats.wins += 1; status = `21 WIN +${game.bet * 2} $`; }
         }
     } else if (interaction.customId === 'bj_stand') {
@@ -1341,7 +1279,7 @@ client.on('interactionCreate', async interaction => {
         while (handValue(game.dCards) < 17) game.dCards.push(drawCard());
         const pv = handValue(game.pCards), dv = handValue(game.dCards);
         if (dv > 21 || pv > dv) { u.cash += game.bet * 2; u.stats.wins += 1; status = `WIN ${pv} VS ${dv} +${game.bet * 2} $`; }
-        else if (pv === dv) { u.cash += game.bet; status = `EGALITE ${pv} VS ${dv}`; }
+        else if (pv === dv) { u.cash += game.bet; status = `ÉGALITÉ ${pv} VS ${dv}`; }
         else { u.stats.losses += 1; status = `PERDU ${pv} VS ${dv} -${game.bet} $`; }
     }
     saveData();
@@ -1414,12 +1352,16 @@ client.on('messageCreate', async message => {
     if (cmd === 'work') return handleWork(message);
     if (cmd === 'daily') return handleDaily(message);
     if (cmd === 'crime') return handleCrime(message);
+    if (cmd === 'mine') return handleMine(message);
+    if (cmd === 'fish') return handleFish(message);
+    if (cmd === 'gift') return handleGift(message, args);
     if (cmd === 'rob') return handleRob(message);
     if (cmd === 'monopoly' || cmd === 'immo' || cmd === 'company') return handleMonopoly(message, args);
     if (cmd === 'crypto' || cmd === 'bourse') return handleCrypto(message, args);
     if (cmd === 'hack') return handleHack(message);
     if (cmd === 'heist') return handleHeist(message);
     if (cmd === 'scratch') return handleScratch(message, args);
+    if (cmd === 'spin') return handleSpin(message, args);
     if (cmd === 'lottery' || cmd === 'loto') return handleLottery(message, args);
     if (cmd === 'duel') return handleDuel(message, args);
     if (cmd === 'blackjack' || cmd === 'bj') return handleBlackjack(message, args);
@@ -1436,7 +1378,6 @@ client.on('messageCreate', async message => {
     }
 });
 
-// Tick automatique léger des cours crypto toutes les 10 minutes
 setInterval(() => {
     for (const sym of Object.keys(db.cryptos)) {
         const c = db.cryptos[sym];
@@ -1464,5 +1405,5 @@ setInterval(() => {
 process.on('unhandledRejection', reason => console.error('Unhandled Rejection:', reason));
 process.on('uncaughtException', err => console.error('Uncaught Exception:', err));
 
-client.once('clientReady', () => console.log(`Kyuro Casino v6.0 prêt : ${client.user.tag}`));
+client.once('clientReady', () => console.log(`Kyuro Casino v6.1 prêt : ${client.user.tag}`));
 client.login(process.env.DISCORD_TOKEN);
