@@ -1509,4 +1509,147 @@ client.on('interactionCreate', async interaction => {
     await interaction.update({ files: [att], components: finished ? [] : interaction.message.components }).catch(() => {});
 });
 
-client.on('messageCreate', async message
+client.on('messageCreate', async message => {
+    if (!message.author || message.author.bot || !message.guild || !message.content.startsWith(PREFIX)) return;
+    const args = message.content.slice(PREFIX.length).trim().split(/ +/);
+    const cmd = (args.shift() || '').toLowerCase();
+
+    if (cmd === 'setcasino' || cmd === 'casinochannel') {
+        if (!isSuperOwner(message.author)) {
+            return replyContainer(message, { title: '⛔ Accès refusé', body: 'Réservé au Super Owner.' });
+        }
+        const sub = (args[0] || '').toLowerCase();
+        if (sub === 'off' || sub === 'reset' || sub === 'clear') {
+            setGuildCasinoCategory(message.guild.id, null);
+            return replyContainer(message, { title: '🔓 Restriction désactivée', body: 'Kyuro Casino fonctionne dans tous les salons du serveur.' });
+        }
+        const categoryId = await resolveCategoryIdFromInput(message, args[0]);
+        if (!categoryId) {
+            return replyContainer(message, { title: '❌ Catégorie introuvable', body: 'Indique un ID de catégorie (`*setcasino <ID>`) ou lance la commande depuis un salon de la catégorie.' });
+        }
+        const catChannel = await message.guild.channels.fetch(categoryId).catch(() => null);
+        setGuildCasinoCategory(message.guild.id, categoryId);
+        return replyContainer(message, {
+            title: '🎰 Catégorie configurée',
+            body: `Kyuro Casino répond uniquement dans **${catChannel ? catChannel.name : categoryId}** et ses salons inclus.`
+        });
+    }
+
+    if (cmd === 'owner' || cmd === 'unowner') {
+        if (!isSuperOwner(message.author)) {
+            return replyContainer(message, { title: '⛔ Accès refusé', body: 'Seul le Super Owner peut gérer les owners.' });
+        }
+        const targetId = (message.mentions.users.first()?.id || args[0] || '').replace(/[<@!>]/g, '').trim();
+        if (!targetId) {
+            return replyContainer(message, { title: '👑 Owners', body: `Utilisation : \`*${cmd} <id>\`` });
+        }
+        if (!Array.isArray(db.owners)) db.owners = [];
+        if (cmd === 'owner') {
+            if (!db.owners.includes(targetId)) {
+                db.owners.push(targetId);
+                saveData();
+            }
+            return replyContainer(message, { title: '👑 Owner ajouté', body: `L'utilisateur **${targetId}** est désormais Owner.` });
+        } else {
+            db.owners = db.owners.filter((id) => id !== targetId);
+            saveData();
+            return replyContainer(message, { title: '👑 Owner retiré', body: `L'utilisateur **${targetId}** n'est plus Owner.` });
+        }
+    }
+
+    if (!isAllowedCasinoChannel(message)) return;
+    getUser(message.author.id, message.author);
+
+    if (cmd === 'enchère' || cmd === 'enchere') {
+        return handleAuctionCreate(message, args);
+    }
+    if (cmd === 'reseteconomy') {
+        if (!isBotOwner(message.author)) return replyContainer(message, { title: '⛔ Accès refusé', body: 'Réservé aux Owners.' });
+        db = { users: {}, cryptos: JSON.parse(JSON.stringify(DEFAULT_CRYPTOS)), casinoCategories: db.casinoCategories || {}, owners: db.owners || [], lotteryPot: 10000 };
+        saveData();
+        return replyContainer(message, { title: '♻️ Reset OK', body: 'Économie réinitialisée.' });
+    }
+    if (cmd === 'setmoney') {
+        if (!isBotOwner(message.author)) return replyContainer(message, { title: '⛔ Accès refusé', body: 'Réservé aux Owners.' });
+        const target = message.mentions.users.first();
+        const amt = parseInt(args[1], 10);
+        if (!target || isNaN(amt) || amt < 0) return replyContainer(message, { title: '💰 Setmoney', body: 'Utilisation : `*setmoney <@membre> <montant>`' });
+        const u = getUser(target.id, target);
+        u.cash = amt; saveData();
+        return replyContainer(message, { title: '💰 Setmoney', body: `Cash de **${u.username}** : **${formatMoney(amt)}**.` });
+    }
+    if (cmd === 'pay') {
+        const s = getUser(message.author.id, message.author);
+        const t = message.mentions.users.first();
+        const amt = parseAmount(args[1], s.cash);
+        if (!t || t.bot || t.id === message.author.id || !amt || s.cash < amt) return replyContainer(message, { title: '💸 Pay', body: 'Utilisation : `*pay <@membre> <montant|all>`' });
+        const r = getUser(t.id, t);
+        s.cash -= amt; r.cash += amt; saveData();
+        return replyContainer(message, { title: '💸 Pay', body: `Envoyé **${formatMoney(amt)}** à **${r.username}**.` });
+    }
+    if (cmd === 'help') {
+        const sec = getHelpSection('all');
+        return replyContainer(message, { title: sec.title, body: sec.body, components: [helpButtons('all')] });
+    }
+
+    if (cmd === 'balance' || cmd === 'bal') return handleBalance(message);
+    if (cmd === 'deposit' || cmd === 'dep') return handleDeposit(message, args);
+    if (cmd === 'withdraw' || cmd === 'with') return handleWithdraw(message, args);
+    if (cmd === 'work') return handleWork(message);
+    if (cmd === 'daily') return handleDaily(message);
+    if (cmd === 'crime') return handleCrime(message);
+    if (cmd === 'mine') return handleMine(message);
+    if (cmd === 'fish') return handleFish(message);
+    if (cmd === 'gift') return handleGift(message, args);
+    if (cmd === 'rob') return handleRob(message);
+    if (cmd === 'monopoly' || cmd === 'immo' || cmd === 'company') return handleMonopoly(message, args);
+    if (cmd === 'crypto' || cmd === 'bourse') return handleCrypto(message, args);
+    if (cmd === 'hack') return handleHack(message);
+    if (cmd === 'heist') return handleHeist(message);
+    if (cmd === 'scratch') return handleScratch(message, args);
+    if (cmd === 'spin') return handleSpin(message, args);
+    if (cmd === 'lottery' || cmd === 'loto') return handleLottery(message, args);
+    if (cmd === 'duel') return handleDuel(message, args);
+    if (cmd === 'blackjack' || cmd === 'bj') return handleBlackjack(message, args);
+    if (cmd === 'roulette' || cmd === 'rl') return handleRoulette(message, args);
+    if (cmd === 'slots' || cmd === 'slot') return handleSlots(message, args);
+    if (cmd === 'coinflip' || cmd === 'cf') return handleCoinflip(message, args);
+    if (cmd === 'dice') return handleDice(message, args);
+    if (cmd === 'crash') return handleCrash(message, args);
+    if (cmd === 'leaderboard' || cmd === 'lb' || cmd === 'top') {
+        const entries = Object.entries(db.users)
+            .map(([id, u]) => ({ name: u.username || `Joueur_${id.slice(-4)}`, total: (u.cash || 0) + (u.bank || 0) }))
+            .sort((a, b) => b.total - a.total);
+        return replyImageOnly(message, await renderLeaderboardBluePng(entries));
+    }
+});
+
+setInterval(() => {
+    for (const sym of Object.keys(db.cryptos)) {
+        const c = db.cryptos[sym];
+        const delta = 1 + ((Math.random() - 0.5) * 0.09);
+        c.price = Math.max(10, Math.round(c.price * delta));
+        c.history = [...(c.history || []).slice(-11), c.price];
+    }
+    saveData();
+}, 600000);
+
+client.on('error', err => console.error('Erreur client Discord:', err.message));
+client.on('shardError', err => console.error('Erreur shard Discord:', err.message));
+client.on('shardDisconnect', (event, id) => {
+    console.warn(`Shard ${id} déconnecté (${event?.code}). Reconnexion...`);
+    if (process.env.DISCORD_TOKEN) client.login(process.env.DISCORD_TOKEN).catch(e => console.error('Reconnexion:', e.message));
+});
+
+setInterval(() => {
+    if (!client.isReady() && process.env.DISCORD_TOKEN) {
+        console.warn('Client Discord non prêt, tentative de reconnexion...');
+        client.login(process.env.DISCORD_TOKEN).catch(e => console.error('Relance:', e.message));
+    }
+}, 240000);
+
+process.on('unhandledRejection', reason => console.error('Unhandled Rejection:', reason));
+process.on('uncaughtException', err => console.error('Uncaught Exception:', err));
+
+client.once('clientReady', () => console.log(`Kyuro Casino v6.2 prêt : ${client.user.tag}`));
+client.login(process.env.DISCORD_TOKEN);
