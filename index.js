@@ -1,4 +1,4 @@
-// Build Revision: Kyuro-Casino-v6.3-CustomVisuals (Prefix: *)
+// Build Revision: Kyuro-Casino-v6.4-CleanStable (Prefix: *)
 const {
     Client,
     GatewayIntentBits,
@@ -31,7 +31,7 @@ try {
 const PORT = process.env.PORT || 3001;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-    res.end('Kyuro Casino v6.3 OK\n');
+    res.end('Kyuro Casino v6.4 OK\n');
 }).listen(PORT, '0.0.0.0', () => console.log(`HTTP actif sur le port ${PORT}`));
 
 const client = new Client({
@@ -71,8 +71,7 @@ let db = {
     users: {},
     cryptos: JSON.parse(JSON.stringify(DEFAULT_CRYPTOS)),
     casinoCategories: {},
-    owners: [],
-    lotteryPot: 2500
+    owners: []
 };
 
 function isSuperOwner(user) {
@@ -113,7 +112,6 @@ function loadData() {
                 ? parsed.casinoCategories
                 : {};
             db.owners = Array.isArray(parsed.owners) ? parsed.owners : [];
-            db.lotteryPot = typeof parsed.lotteryPot === 'number' ? parsed.lotteryPot : 2500;
         }
     } catch (e) {
         console.error('Erreur chargement:', e.message);
@@ -185,10 +183,13 @@ function getUser(userId, discordUser = null) {
 }
 
 function parseAmount(rawArg, maxVal) {
-    if (!rawArg) return null;
-    if (rawArg.toLowerCase() === 'all') return maxVal > 0 ? Math.floor(maxVal) : null;
-    const n = parseInt(rawArg, 10);
-    return (!isNaN(n) && n > 0) ? n : null;
+    if (rawArg === undefined || rawArg === null) return null;
+    const str = String(rawArg).trim().toLowerCase();
+    if (!str) return null;
+    if (str === 'all') return maxVal > 0 ? Math.floor(maxVal) : null;
+    if (!/^\d+$/.test(str)) return null;
+    const n = Number(str);
+    return (Number.isSafeInteger(n) && n > 0) ? n : null;
 }
 
 function parseDurationMs(rawDur) {
@@ -326,7 +327,6 @@ function drawBlueThemeFrame(ctx, w, h, badgeText, pseudoText) {
     }
     ctx.restore();
 }
-
 function drawRoundedAvatar(ctx, avatarImg, cx, cy, radius) {
     ctx.save();
     ctx.beginPath();
@@ -388,6 +388,7 @@ function drawDieFace(ctx, x, y, size, val) {
     }
     ctx.restore();
 }
+
 async function createCleanBlueCard(w, h, badgeText, pseudoText, avatarUrl, drawBodyFn, filename) {
     if (!NapiCanvas) {
         return new AttachmentBuilder(Buffer.from(''), { name: filename });
@@ -400,7 +401,6 @@ async function createCleanBlueCard(w, h, badgeText, pseudoText, avatarUrl, drawB
     const pngBuffer = await canvas.encode('png');
     return new AttachmentBuilder(pngBuffer, { name: filename });
 }
-
 async function renderWalletBluePng(userObj, extra = '') {
     return createCleanBlueCard(960, 420, 'KYURO BANK', userObj.username, userObj.avatarUrl, async (ctx, av) => {
         drawRoundedAvatar(ctx, av, 72, 128, 36);
@@ -492,7 +492,6 @@ async function renderMonopolyBluePng(userObj, pendingRent, residentsCount, maxRe
         }
     }, 'kyuro-monopoly.png');
 }
-
 async function renderCryptoBluePng(userObj, symbol, name, price, history, userQty) {
     return createCleanBlueCard(960, 430, `KYURO CRYPTO • ${symbol}`, userObj.username, userObj.avatarUrl, async (ctx, av) => {
         drawRoundedAvatar(ctx, av, 72, 122, 30);
@@ -537,6 +536,7 @@ async function renderCryptoBluePng(userObj, symbol, name, price, history, userQt
         ctx.fillText(`MIN : ${minV.toLocaleString('fr-FR')} $   •   MAX : ${maxV.toLocaleString('fr-FR')} $`, 38, 378);
     }, 'kyuro-crypto.png');
 }
+
 async function renderSlotsBluePng(userObj, reels, bet, statusText) {
     return createCleanBlueCard(960, 430, 'KYURO SLOTS', `${userObj.username} • ${bet.toLocaleString('fr-FR')} $`, userObj.avatarUrl, async (ctx, av) => {
         drawRoundedAvatar(ctx, av, 72, 114, 28);
@@ -544,7 +544,6 @@ async function renderSlotsBluePng(userObj, reels, bet, statusText) {
         ctx.font = '700 26px Sans, Arial, sans-serif';
         ctx.fillText(statusText, 114, 122);
 
-        // Châssis de machine à sous stylisé avec levier
         const cabX = 38, cabY = 158, cabW = 836, cabH = 224;
         const cabGrad = ctx.createLinearGradient(cabX, cabY, cabX, cabY + cabH);
         cabGrad.addColorStop(0, '#102e61');
@@ -557,7 +556,6 @@ async function renderSlotsBluePng(userObj, reels, bet, statusText) {
         ctx.strokeStyle = '#7dd3fc';
         ctx.stroke();
 
-        // Levier droit de machine
         ctx.fillStyle = '#38bdf8';
         ctx.beginPath();
         ctx.roundRect(cabX + cabW + 10, cabY + 52, 14, 116, 7);
@@ -596,7 +594,6 @@ async function renderSlotsBluePng(userObj, reels, bet, statusText) {
         });
     }, 'kyuro-slots.png');
 }
-
 async function renderDiceBluePng(userObj, roll, guess, bet, statusText) {
     return createCleanBlueCard(960, 420, 'KYURO DICE', `${userObj.username} • ${bet.toLocaleString('fr-FR')} $`, userObj.avatarUrl, async (ctx, av) => {
         drawRoundedAvatar(ctx, av, 72, 120, 30);
@@ -791,7 +788,6 @@ async function renderFishOrMineBluePng(userObj, mode, itemLabel, gain) {
         ctx.fillText(`GAIN : +${gain.toLocaleString('fr-FR')} $`, 514, 282);
     }, isFish ? 'kyuro-fish.png' : 'kyuro-mine.png');
 }
-
 async function renderBlueActionPng(userObj, badge, headline, subline) {
     return createCleanBlueCard(960, 390, `KYURO • ${badge}`, userObj.username, userObj.avatarUrl, async (ctx, av) => {
         drawRoundedAvatar(ctx, av, 76, 134, 36);
@@ -869,7 +865,6 @@ async function renderBlackjackBluePng(userObj, bet, pCards, pVal, dCards, dVal, 
         ctx.fillText(statusText, 60, 344);
     }, 'kyuro-blackjack.png');
 }
-
 async function renderRouletteBluePng(userObj, num, color, bet, statusText) {
     return createCleanBlueCard(960, 420, 'KYURO ROULETTE', userObj.username, userObj.avatarUrl, async (ctx, av) => {
         drawRoundedAvatar(ctx, av, 72, 122, 30);
@@ -1007,7 +1002,7 @@ function getHelpSection(tab = 'all') {
                 '`*blackjack <mise|all>` (`*bj`) • `*roulette <rouge|noir|vert|pair|impair> <mise|all>` (`*rl`)',
                 '`*slots <mise|all>` (`*slot`) • `*coinflip <pile|face> <mise|all>` (`*cf`)',
                 '`*dice <1-6> <mise|all>` • `*crash <mise|all>` • `*spin <mise|all>`',
-                '`*duel <@membre> <mise|all>` • `*scratch <mise|all>` • `*lottery [buy <mise>|draw]`'
+                '`*duel <@membre> <mise|all>` • `*scratch <mise|all>`'
             ].join('\n')
         };
     }
@@ -1037,7 +1032,7 @@ function getHelpSection(tab = 'all') {
             'Choisis un onglet ci-dessous pour explorer les commandes :',
             '',
             '`💰 Économie` — `*balance` `*deposit` `*withdraw` `*work` `*daily` `*crime` `*mine` `*fish` `*pay` `*gift`',
-            '`🎰 Gamble & Fun` — `*bj` `*roulette` `*slots` `*cf` `*dice` `*crash` `*spin` `*duel` `*scratch` `*lottery`',
+            '`🎰 Gamble & Fun` — `*bj` `*roulette` `*slots` `*cf` `*dice` `*crash` `*spin` `*duel` `*scratch`',
             '`🏙️ Monopoly & Crypto` — `*monopoly` `*crypto` `*heist` `*hack` `*rob` `*lb`',
             '`👑 Owner` — `*owner` `*unowner` `*enchère` `*setcasino` `*setmoney` `*reseteconomy`'
         ].join('\n')
@@ -1052,840 +1047,3 @@ function helpButtons(activeTab = 'all') {
         new ButtonBuilder().setCustomId('help_owner').setLabel('Owner').setStyle(activeTab === 'owner' ? ButtonStyle.Primary : ButtonStyle.Secondary)
     );
 }
-
-function buildAuctionContainer(auc) {
-    const endsUnix = Math.floor(auc.endsAt / 1000);
-    const highestLine = auc.highestBidderId
-        ? `Meilleure offre : **${formatMoney(auc.highestBid)}** par **${auc.highestBidderName}**`
-        : 'Meilleure offre : *Aucune offre pour le moment*';
-    return buildContainerV2({
-        title: `🔨 Enchère • ${auc.title}`,
-        body: [
-            `Prix à gagner : **${auc.prizeLabel}**`,
-            highestLine,
-            `Fin de l'enchère : <t:${endsUnix}:R>`
-        ].join('\n'),
-        footer: 'Kyuro Casino • Clique sur Enchérir pour miser ton cash'
-    });
-}
-
-function auctionButtonRow(disabled = false) {
-    return new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId('auction_bid')
-            .setLabel('Enchérir')
-            .setStyle(ButtonStyle.Primary)
-            .setDisabled(disabled)
-    );
-}
-function getBuildingStats(ownerObj) {
-    const list = Array.isArray(ownerObj.buildings) ? ownerObj.buildings : [];
-    const maxRes = list.reduce((acc, b) => acc + (b.maxResidents || 0), 0);
-    const rentPerHour = list.reduce((acc, b) => acc + ((b.residents || 0) * (b.rentPerResident || 65)), 0);
-    const residentsTotal = list.reduce((acc, b) => acc + (b.residents || 0), 0);
-    return { maxRes, rentPerHour, residentsTotal };
-}
-
-function computePendingRent(ownerObj) {
-    const list = Array.isArray(ownerObj.buildings) ? ownerObj.buildings : [];
-    if (list.length === 0) return 0;
-    const now = Date.now();
-    let total = 0;
-    for (const b of list) {
-        const last = b.lastCollect || now;
-        const hours = Math.min(24, Math.max(0, (now - last) / 3600000));
-        total += Math.floor(hours * (b.residents || 0) * (b.rentPerResident || 65));
-    }
-    return total;
-}
-
-async function handleMonopoly(message, args) {
-    const u = getUser(message.author.id, message.author);
-    const sub = (args[0] || 'info').toLowerCase();
-
-    if (sub === 'shop' || sub === 'list') {
-        const lines = Object.values(BUILDINGS_CATALOG).map(
-            (b) => `• **${b.name}** (` + '`' + b.id + '`' + `) — **${formatMoney(b.price)}** • **${formatMoney(b.rentPerResident)}/h** par habitant (max **${b.maxResidents}** hab.)`
-        );
-        return replyContainer(message, {
-            title: '🏙️ Kyuro Monopoly • Catalogue',
-            body: `${lines.join('\n')}\n\nAchète avec \`*monopoly buy <id>\` ou emménage chez un joueur avec \`*monopoly movein <@proprio>\`.`
-        });
-    }
-
-    if (sub === 'buy') {
-        const bKey = (args[1] || '').toLowerCase();
-        const tpl = BUILDINGS_CATALOG[bKey];
-        if (!tpl) {
-            return replyContainer(message, {
-                title: '🏙️ Kyuro Monopoly',
-                body: 'ID inconnu (`studio`, `residence`, `penthouse`, `citadel`). Utilise `*monopoly shop`.'
-            });
-        }
-        if (u.cash < tpl.price) {
-            return replyContainer(message, {
-                title: '🏙️ Fonds insuffisants',
-                body: `Il te faut **${formatMoney(tpl.price)}** en cash pour acheter **${tpl.name}**.`
-            });
-        }
-        u.cash -= tpl.price;
-        u.buildings.push({
-            id: tpl.id,
-            name: tpl.name,
-            tier: tpl.tier,
-            rentPerResident: tpl.rentPerResident,
-            maxResidents: tpl.maxResidents,
-            residents: 1,
-            lastCollect: Date.now()
-        });
-        saveData();
-        const st = getBuildingStats(u);
-        return replyImageOnly(message, await renderMonopolyBluePng(u, computePendingRent(u), st.residentsTotal, st.maxRes));
-    }
-
-    if (sub === 'movein' || sub === 'habiter') {
-        const target = message.mentions.users.first();
-        if (!target || target.bot || target.id === message.author.id) {
-            return replyContainer(message, {
-                title: '🏠 Emménagement',
-                body: 'Mentionne un joueur qui possède un immeuble : `*monopoly movein <@membre>`'
-            });
-        }
-        const host = getUser(target.id, target);
-        const freeBuilding = host.buildings.find((b) => (b.residents || 0) < (b.maxResidents || 0));
-        if (!freeBuilding) {
-            return replyContainer(message, {
-                title: '🏠 Immeuble complet',
-                body: `**${host.username}** n'a plus de place disponible dans ses immeubles.`
-            });
-        }
-        const depositFee = 450;
-        if (u.cash < depositFee) {
-            return replyContainer(message, {
-                title: '🏠 Caution requise',
-                body: `Il faut **${formatMoney(depositFee)}** de caution pour emménager chez **${host.username}**.`
-            });
-        }
-        u.cash -= depositFee;
-        host.cash += depositFee;
-        freeBuilding.residents = (freeBuilding.residents || 0) + 1;
-        u.homeBuildingOwnerId = target.id;
-        saveData();
-        return replyContainer(message, {
-            title: '🏠 Nouveau locataire',
-            body: `Tu habites désormais dans **${freeBuilding.name}** chez **${host.username}** (caution **${formatMoney(depositFee)}** versée).`
-        });
-    }
-
-    if (sub === 'collect' || sub === 'loyer') {
-        const pending = computePendingRent(u);
-        const now = Date.now();
-        for (const b of u.buildings) b.lastCollect = now;
-        u.cash += pending;
-        saveData();
-        const st = getBuildingStats(u);
-        return replyImageOnly(message, await renderMonopolyBluePng(u, 0, st.residentsTotal, st.maxRes));
-    }
-
-    const st = getBuildingStats(u);
-    return replyImageOnly(message, await renderMonopolyBluePng(u, computePendingRent(u), st.residentsTotal, st.maxRes));
-}
-
-async function handleBalance(message) {
-    const target = message.mentions.users.first() || message.author;
-    const u = getUser(target.id, target);
-    const extra = u.buildings.length > 0 ? `IMMEUBLES : ${u.buildings.length} BIEN(S)` : 'AUCUN IMMEUBLE';
-    return replyImageOnly(message, await renderWalletBluePng(u, extra));
-}
-
-async function handleDeposit(message, args) {
-    const u = getUser(message.author.id, message.author);
-    const amt = parseAmount(args[0], u.cash);
-    if (!amt || u.cash < amt) return replyContainer(message, { title: '🏦 Dépôt', body: 'Utilisation : `*deposit <montant|all>`' });
-    u.cash -= amt; u.bank += amt; saveData();
-    return replyImageOnly(message, await renderWalletBluePng(u, `DÉPÔT BANQUE : +${amt.toLocaleString('fr-FR')} $`));
-}
-
-async function handleWithdraw(message, args) {
-    const u = getUser(message.author.id, message.author);
-    const amt = parseAmount(args[0], u.bank);
-    if (!amt || u.bank < amt) return replyContainer(message, { title: '🏧 Retrait', body: 'Utilisation : `*withdraw <montant|all>`' });
-    u.bank -= amt; u.cash += amt; saveData();
-    return replyImageOnly(message, await renderWalletBluePng(u, `RETRAIT CASH : +${amt.toLocaleString('fr-FR')} $`));
-}
-
-async function handleWork(message) {
-    const u = getUser(message.author.id, message.author);
-    const now = Date.now(), cd = 45 * 60 * 1000;
-    if (now - u.cooldowns.work < cd) return replyContainer(message, { title: '💼 Travail', body: `Patiente **${formatCooldown(cd - (now - u.cooldowns.work))}**.` });
-    u.cooldowns.work = now;
-    const gain = randInt(45, 190);
-    u.cash += gain; saveData();
-    return replyImageOnly(message, await renderBlueActionPng(u, 'WORK', `SALAIRE : +${gain.toLocaleString('fr-FR')} $`, `CASH : ${u.cash.toLocaleString('fr-FR')} $`));
-}
-
-async function handleDaily(message) {
-    const u = getUser(message.author.id, message.author);
-    const now = Date.now(), cd = 24 * 60 * 60 * 1000;
-    if (now - u.cooldowns.daily < cd) return replyContainer(message, { title: '🎁 Daily', body: `Prochain daily dans **${formatCooldown(cd - (now - u.cooldowns.daily))}**.` });
-    u.cooldowns.daily = now;
-    const gain = randInt(150, 480);
-    u.cash += gain; saveData();
-    return replyImageOnly(message, await renderBlueActionPng(u, 'DAILY', `BONUS : +${gain.toLocaleString('fr-FR')} $`, `CASH : ${u.cash.toLocaleString('fr-FR')} $`));
-}
-
-async function handleCrime(message) {
-    const u = getUser(message.author.id, message.author);
-    const now = Date.now(), cd = 30 * 60 * 1000;
-    if (now - u.cooldowns.crime < cd) return replyContainer(message, { title: '🕵️ Crime', body: `Patiente **${formatCooldown(cd - (now - u.cooldowns.crime))}**.` });
-    u.cooldowns.crime = now;
-    const ok = Math.random() < 0.38;
-    const amt = ok ? randInt(90, 340) : Math.min(u.cash, randInt(80, 260));
-    if (ok) u.cash += amt; else u.cash -= amt;
-    saveData();
-    return replyImageOnly(message, await renderBlueActionPng(u, 'CRIME', ok ? `COUP RÉUSSI +${amt.toLocaleString('fr-FR')} $` : `AMENDE -${amt.toLocaleString('fr-FR')} $`, `CASH : ${u.cash.toLocaleString('fr-FR')} $`));
-}
-
-async function handleMine(message) {
-    const u = getUser(message.author.id, message.author);
-    const now = Date.now(), cd = 25 * 60 * 1000;
-    if (now - u.cooldowns.mine < cd) return replyContainer(message, { title: '⛏️ Mine', body: `Patiente **${formatCooldown(cd - (now - u.cooldowns.mine))}**.` });
-    u.cooldowns.mine = now;
-    const ores = ['FER', 'CUIVRE', 'OR', 'DIAMANT', 'CRISTAL KYR'];
-    const ore = ores[randInt(0, ores.length - 1)];
-    const gain = randInt(35, 220);
-    u.cash += gain; saveData();
-    return replyImageOnly(message, await renderFishOrMineBluePng(u, 'MINE', ore, gain));
-}
-
-async function handleFish(message) {
-    const u = getUser(message.author.id, message.author);
-    const now = Date.now(), cd = 25 * 60 * 1000;
-    if (now - u.cooldowns.fish < cd) return replyContainer(message, { title: '🎣 Pêche', body: `Patiente **${formatCooldown(cd - (now - u.cooldowns.fish))}**.` });
-    u.cooldowns.fish = now;
-    const catches = ['GARDON', 'BROCHET', 'CARPE', 'COFFRE BLEU', 'PERLE'];
-    const item = catches[randInt(0, catches.length - 1)];
-    const gain = randInt(30, 195);
-    u.cash += gain; saveData();
-    return replyImageOnly(message, await renderFishOrMineBluePng(u, 'FISH', item, gain));
-}
-async function handleGift(message, args) {
-    const s = getUser(message.author.id, message.author);
-    const target = message.mentions.users.first();
-    const amt = parseAmount(args[1], s.cash);
-    if (!target || target.bot || target.id === message.author.id || !amt || s.cash < amt) {
-        return replyContainer(message, { title: '🎁 Cadeau', body: 'Utilisation : `*gift <@membre> <montant|all>`' });
-    }
-    const r = getUser(target.id, target);
-    const bonus = Math.floor(amt * (randInt(1, 6) / 100));
-    s.cash -= amt;
-    r.cash += amt + bonus;
-    saveData();
-    return replyContainer(message, {
-        title: '🎁 Cadeau envoyé',
-        body: `Tu as offert **${formatMoney(amt)}** à **${r.username}** (+**${formatMoney(bonus)}** bonus aléatoire).`
-    });
-}
-
-async function handleRob(message) {
-    const atk = getUser(message.author.id, message.author);
-    const target = message.mentions.users.first();
-    if (!target || target.bot || target.id === message.author.id) return replyContainer(message, { title: '🔫 Vol', body: 'Utilisation : `*rob <@membre>`' });
-    if (isSuperOwner(target)) return replyContainer(message, { title: '🔫 Vol bloqué', body: 'Impossible de voler le Super Owner.' });
-    const now = Date.now(), cd = 45 * 60 * 1000;
-    if (now - atk.cooldowns.rob < cd) return replyContainer(message, { title: '🔫 Vol', body: `Patiente **${formatCooldown(cd - (now - atk.cooldowns.rob))}**.` });
-    atk.cooldowns.rob = now;
-    const def = getUser(target.id, target);
-    if (def.cash < 100) return replyContainer(message, { title: '🔫 Vol', body: 'Cible trop pauvre.' });
-    const ok = Math.random() < 0.34;
-    const pct = randInt(5, 16) / 100;
-    const amt = ok ? Math.min(def.cash, Math.max(40, Math.floor(def.cash * pct))) : Math.min(atk.cash, randInt(60, 220));
-    if (ok) { def.cash -= amt; atk.cash += amt; } else { atk.cash -= amt; }
-    saveData();
-    return replyImageOnly(message, await renderBlueActionPng(atk, 'ROB', ok ? `VOLÉ ${amt.toLocaleString('fr-FR')} $` : `RATÉ -${amt.toLocaleString('fr-FR')} $`, `CIBLE : ${def.username}`));
-}
-
-async function handleCrypto(message, args) {
-    const u = getUser(message.author.id, message.author);
-    const sub = (args[0] || 'KYR').toLowerCase();
-    if (sub === 'buy') {
-        const sym = (args[1] || '').toUpperCase();
-        const amt = parseFloat(args[2]);
-        const c = db.cryptos[sym];
-        if (!c || isNaN(amt) || amt <= 0) return replyContainer(message, { title: '📈 Crypto', body: 'Utilisation : `*crypto buy <BTC|ETH|KYR|SOL> <qté>`' });
-        const cost = Math.ceil(amt * c.price);
-        if (u.cash < cost) return replyContainer(message, { title: '📈 Crypto', body: `Il faut **${formatMoney(cost)}**.` });
-        u.cash -= cost; u.crypto[sym] = (u.crypto[sym] || 0) + amt; saveData();
-        return replyImageOnly(message, await renderCryptoBluePng(u, sym, c.name, c.price, c.history, u.crypto[sym]));
-    }
-    if (sub === 'sell') {
-        const sym = (args[1] || '').toUpperCase();
-        const amt = parseFloat(args[2]);
-        const c = db.cryptos[sym];
-        if (!c || isNaN(amt) || amt <= 0 || (u.crypto[sym] || 0) < amt) return replyContainer(message, { title: '📉 Crypto', body: 'Utilisation : `*crypto sell <BTC|ETH|KYR|SOL> <qté>`' });
-        const gain = Math.floor(amt * c.price);
-        u.crypto[sym] -= amt; u.cash += gain; saveData();
-        return replyImageOnly(message, await renderCryptoBluePng(u, sym, c.name, c.price, c.history, u.crypto[sym]));
-    }
-    const sym = db.cryptos[sub.toUpperCase()] ? sub.toUpperCase() : 'KYR';
-    const c = db.cryptos[sym];
-    return replyImageOnly(message, await renderCryptoBluePng(u, sym, c.name, c.price, c.history, u.crypto[sym] || 0));
-}
-
-async function handleHack(message) {
-    const atk = getUser(message.author.id, message.author);
-    const target = message.mentions.users.first();
-    if (!target || target.bot || target.id === message.author.id) return replyContainer(message, { title: '💻 Hack', body: 'Utilisation : `*hack <@membre>`' });
-    if (isSuperOwner(target)) return replyContainer(message, { title: '💻 Hack bloqué', body: 'Impossible de hacker le Super Owner.' });
-    const now = Date.now(), cd = 50 * 60 * 1000;
-    if (now - atk.cooldowns.hack < cd) return replyContainer(message, { title: '💻 Hack', body: `Recharge dans **${formatCooldown(cd - (now - atk.cooldowns.hack))}**.` });
-    atk.cooldowns.hack = now;
-    const def = getUser(target.id, target);
-    const ok = Math.random() < 0.35 && def.cash >= 100;
-    const amt = ok ? Math.min(def.cash, Math.max(50, Math.floor(def.cash * (randInt(5, 14) / 100)))) : Math.min(atk.cash, randInt(60, 200));
-    if (ok) { def.cash -= amt; atk.cash += amt; atk.stats.hacksSuccess += 1; } else { atk.cash -= amt; }
-    saveData();
-    return replyImageOnly(message, await renderBlueActionPng(atk, 'HACK', ok ? `BREACH +${amt.toLocaleString('fr-FR')} $` : `TRACE -${amt.toLocaleString('fr-FR')} $`, `CIBLE : ${def.username}`));
-}
-
-async function handleHeist(message) {
-    const atk = getUser(message.author.id, message.author);
-    const target = message.mentions.users.first();
-    if (!target || target.bot || target.id === message.author.id) return replyContainer(message, { title: '🏦 Heist', body: 'Utilisation : `*heist <@membre>`' });
-    if (isSuperOwner(target)) return replyContainer(message, { title: '🏦 Heist bloqué', body: 'Cible protégée.' });
-    const now = Date.now(), cd = 60 * 60 * 1000;
-    if (now - atk.cooldowns.heist < cd) return replyContainer(message, { title: '🏦 Heist', body: `Recharge dans **${formatCooldown(cd - (now - atk.cooldowns.heist))}**.` });
-    atk.cooldowns.heist = now;
-    const def = getUser(target.id, target);
-    const ok = Math.random() < 0.28 && def.bank >= 200;
-    const amt = ok ? Math.min(def.bank, Math.max(90, Math.floor(def.bank * (randInt(6, 15) / 100)))) : Math.min(atk.cash, randInt(100, 320));
-    if (ok) { def.bank -= amt; atk.cash += amt; } else { atk.cash -= amt; }
-    saveData();
-    return replyImageOnly(message, await renderBlueActionPng(atk, 'HEIST', ok ? `CASSE +${amt.toLocaleString('fr-FR')} $` : `ALARME -${amt.toLocaleString('fr-FR')} $`, `BANQUE : ${def.username}`));
-}
-
-async function handleScratch(message, args) {
-    const u = getUser(message.author.id, message.author);
-    const bet = parseAmount(args[0], u.cash);
-    if (!bet || u.cash < bet) return replyContainer(message, { title: '🎟️ Scratch', body: 'Utilisation : `*scratch <mise|all>`' });
-    u.cash -= bet; u.stats.wagered += bet;
-    const mults = [0, 0, 0, 0.35, 0.75, 1.2, 2.0, 3.2];
-    const m = mults[randInt(0, mults.length - 1)];
-    const gain = Math.floor(bet * m);
-    if (gain > 0) { u.cash += gain; u.stats.wins += 1; } else { u.stats.losses += 1; }
-    saveData();
-    return replyImageOnly(message, await renderBlueActionPng(u, 'SCRATCH', `MULTIPLICATEUR X${m}`, gain > 0 ? `GAIN : +${gain.toLocaleString('fr-FR')} $` : `PERDU : -${bet.toLocaleString('fr-FR')} $`));
-}
-
-async function handleSpin(message, args) {
-    const u = getUser(message.author.id, message.author);
-    const bet = parseAmount(args[0], u.cash);
-    if (!bet || u.cash < bet) return replyContainer(message, { title: '🎡 Spin', body: 'Utilisation : `*spin <mise|all>`' });
-    u.cash -= bet; u.stats.wagered += bet;
-    const wheel = [0, 0, 0.4, 0.8, 1.25, 1.85, 3.0];
-    const m = wheel[randInt(0, wheel.length - 1)];
-    const gain = Math.floor(bet * m);
-    if (gain > 0) { u.cash += gain; u.stats.wins += 1; } else { u.stats.losses += 1; }
-    saveData();
-    return replyImageOnly(message, await renderBlueActionPng(u, 'SPIN', `ROUE : X${m}`, gain > 0 ? `REÇU : +${gain.toLocaleString('fr-FR')} $` : `MISE PERDUE : -${bet.toLocaleString('fr-FR')} $`));
-}
-
-async function handleLottery(message, args) {
-    const u = getUser(message.author.id, message.author);
-    const sub = (args[0] || 'info').toLowerCase();
-    if (sub === 'buy') {
-        const bet = parseAmount(args[1], u.cash);
-        if (!bet || u.cash < bet) return replyContainer(message, { title: '🎟️ Loterie', body: 'Utilisation : `*lottery buy <mise|all>`' });
-        u.cash -= bet;
-        db.lotteryPot += bet;
-        saveData();
-        return replyContainer(message, { title: '🎟️ Ticket validé', body: `Mise **${formatMoney(bet)}** ajoutée au pot (**${formatMoney(db.lotteryPot)}**). Lance \`*lottery draw\` pour tenter le tirage.` });
-    }
-    if (sub === 'draw') {
-        if (db.lotteryPot <= 0) return replyContainer(message, { title: '🎟️ Loterie', body: 'Le pot est vide.' });
-        const won = Math.random() < 0.14;
-        if (won) {
-            const prize = db.lotteryPot;
-            db.lotteryPot = 1000;
-            u.cash += prize;
-            saveData();
-            return replyImageOnly(message, await renderBlueActionPng(u, 'LOTTERY', `JACKPOT +${prize.toLocaleString('fr-FR')} $`, `CASH : ${u.cash.toLocaleString('fr-FR')} $`));
-        }
-        saveData();
-        return replyContainer(message, { title: '🎟️ Tirage manqué', body: `Pas cette fois. Pot actuel : **${formatMoney(db.lotteryPot)}**.` });
-    }
-    return replyContainer(message, { title: '🎟️ Kyuro Loterie', body: `Pot actuel : **${formatMoney(db.lotteryPot)}** • \`*lottery buy <mise|all>\` • \`*lottery draw\`` });
-}
-
-async function handleDuel(message, args) {
-    const p1 = getUser(message.author.id, message.author);
-    const target = message.mentions.users.first();
-    const bet = parseAmount(args[1] || args[0], p1.cash);
-    if (!target || target.bot || target.id === message.author.id || !bet || p1.cash < bet) {
-        return replyContainer(message, { title: '⚔️ Duel', body: 'Utilisation : `*duel <@membre> <mise|all>`' });
-    }
-    const p2 = getUser(target.id, target);
-    if (p2.cash < bet) return replyContainer(message, { title: '⚔️ Duel', body: `**${p2.username}** n'a pas assez de cash.` });
-    const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('duel_accept').setLabel('Accepter le duel').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('duel_decline').setLabel('Refuser').setStyle(ButtonStyle.Secondary)
-    );
-    const sent = await replyContainer(message, {
-        title: '⚔️ Défi Duel',
-        body: `**${p1.username}** défie **${p2.username}** pour **${formatMoney(bet)}** !`,
-        components: [row]
-    });
-    activeDuels.set(sent.id, { p1Id: message.author.id, p2Id: target.id, bet });
-}
-
-async function handleAuctionCreate(message, args) {
-    if (!isBotOwner(message.author)) {
-        return replyContainer(message, { title: '⛔ Accès refusé', body: 'Commande réservée aux Owners.' });
-    }
-    const rawJoin = args.join(' ');
-    const pipeIdx = rawJoin.indexOf('|');
-    const leftPart = pipeIdx >= 0 ? rawJoin.slice(0, pipeIdx).trim().split(/ +/) : args;
-    const title = pipeIdx >= 0 ? rawJoin.slice(pipeIdx + 1).trim() : (leftPart.slice(2).join(' ').trim() || 'Lot Mystère');
-    const durationMs = parseDurationMs(leftPart[0]);
-    const prizeLabel = leftPart[1] ? leftPart[1].trim() : 'Bonus Spécial';
-
-    if (!durationMs || !prizeLabel || !title) {
-        return replyContainer(message, {
-            title: '🔨 Enchère',
-            body: 'Utilisation : `*enchère <durée: 30s|2m|1h> <prix> | <titre>`'
-        });
-    }
-
-    const auc = {
-        messageId: null,
-        channelId: message.channel.id,
-        title,
-        prizeLabel,
-        endsAt: Date.now() + durationMs,
-        highestBid: 0,
-        highestBidderId: null,
-        highestBidderName: null,
-        ended: false
-    };
-
-    const sent = await replyContainer(message, {
-        title: `🔨 Enchère • ${auc.title}`,
-        body: [
-            `Prix à gagner : **${auc.prizeLabel}**`,
-            'Meilleure offre : *Aucune offre pour le moment*',
-            `Fin de l'enchère : <t:${Math.floor(auc.endsAt / 1000)}:R>`
-        ].join('\n'),
-        footer: 'Kyuro Casino • Clique sur Enchérir pour miser ton cash',
-        components: [auctionButtonRow(false)]
-    });
-
-    auc.messageId = sent.id;
-    activeAuctions.set(sent.id, auc);
-
-    setTimeout(async () => {
-        const current = activeAuctions.get(sent.id);
-        if (!current || current.ended) return;
-        current.ended = true;
-        activeAuctions.delete(sent.id);
-
-        let resultBody;
-        if (current.highestBidderId) {
-            const winner = getUser(current.highestBidderId);
-            if (winner.cash >= current.highestBid) {
-                winner.cash -= current.highestBid;
-                saveData();
-            }
-            resultBody = `Gagnant : **${current.highestBidderName}** avec une offre de **${formatMoney(current.highestBid)}** !\nPrix remporté : **${current.prizeLabel}**`;
-        } else {
-            resultBody = 'Enchère terminée sans aucune offre.';
-        }
-
-        const finalContainer = buildContainerV2({
-            title: `🔨 Enchère terminée • ${current.title}`,
-            body: resultBody,
-            footer: 'Kyuro Casino • Enchère clôturée'
-        });
-        await sent.edit({
-            flags: MessageFlags.IsComponentsV2,
-            components: [finalContainer, auctionButtonRow(true)]
-        }).catch(() => {});
-    }, durationMs);
-}
-
-function drawCard() {
-    const ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
-    const suits = ['S', 'H', 'D', 'C'];
-    return `${ranks[randInt(0, ranks.length - 1)]}${suits[randInt(0, suits.length - 1)]}`;
-}
-
-function handValue(cards) {
-    let total = 0, aces = 0;
-    for (const c of cards) {
-        const r = c.slice(0, -1);
-        if (r === 'A') { total += 11; aces++; }
-        else if (['K', 'Q', 'J'].includes(r)) total += 10;
-        else total += parseInt(r, 10);
-    }
-    while (total > 21 && aces > 0) { total -= 10; aces--; }
-    return total;
-}
-
-async function handleBlackjack(message, args) {
-    const u = getUser(message.author.id, message.author);
-    const bet = parseAmount(args[0], u.cash);
-    if (!bet || u.cash < bet) return replyContainer(message, { title: '🃏 Blackjack', body: 'Utilisation : `*blackjack <mise|all>`' });
-    u.cash -= bet; u.stats.wagered += bet; saveData();
-    const pCards = [drawCard(), drawCard()], dCards = [drawCard(), drawCard()];
-    const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('bj_hit').setLabel('Tirer').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('bj_stand').setLabel('Rester').setStyle(ButtonStyle.Secondary)
-    );
-    const att = await renderBlackjackBluePng(u, bet, pCards, handValue(pCards), [dCards[0], '??'], '?', 'EN COURS');
-    const sent = await replyImageOnly(message, att, [row]);
-    activeBlackjacks.set(sent.id, { userId: message.author.id, bet, pCards, dCards });
-}
-
-async function handleRoulette(message, args) {
-    const u = getUser(message.author.id, message.author);
-    const ch = (args[0] || '').toLowerCase();
-    const bet = parseAmount(args[1], u.cash);
-    const valid = ['rouge', 'red', 'noir', 'black', 'vert', 'green', 'pair', 'even', 'impair', 'odd'];
-    if (!valid.includes(ch) || !bet || u.cash < bet) return replyContainer(message, { title: '🎡 Roulette', body: 'Utilisation : `*roulette <rouge|noir|vert|pair|impair> <mise|all>`' });
-    u.cash -= bet; u.stats.wagered += bet;
-    const num = randInt(0, 36);
-    const reds = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
-    const color = num === 0 ? 'vert' : (reds.has(num) ? 'rouge' : 'noir');
-    const parity = num === 0 ? 'zero' : (num % 2 === 0 ? 'pair' : 'impair');
-    const norm = ['rouge','red'].includes(ch) ? 'rouge' : ['noir','black'].includes(ch) ? 'noir' : ['vert','green'].includes(ch) ? 'vert' : ['pair','even'].includes(ch) ? 'pair' : 'impair';
-    const mult = (norm === 'vert' && color === 'vert') ? 12 : ((norm === color || norm === parity) ? 1.75 : 0);
-    const win = Math.floor(bet * mult);
-    if (win > 0) { u.cash += win; u.stats.wins += 1; } else { u.stats.losses += 1; }
-    saveData();
-    return replyImageOnly(message, await renderRouletteBluePng(u, num, color, bet, win > 0 ? `GAGNÉ : +${win.toLocaleString('fr-FR')} $` : `PERDU : -${bet.toLocaleString('fr-FR')} $`));
-}
-
-async function handleSlots(message, args) {
-    const u = getUser(message.author.id, message.author);
-    const bet = parseAmount(args[0], u.cash);
-    if (!bet || u.cash < bet) return replyContainer(message, { title: '🎰 Slots', body: 'Utilisation : `*slots <mise|all>`' });
-    u.cash -= bet; u.stats.wagered += bet;
-    const syms = ['💎', '💠', '🪙', '⚡', '🔥'];
-    const r = [0,1,2].map(() => syms[randInt(0, syms.length - 1)]);
-    const mult = (r[0] === r[1] && r[1] === r[2]) ? (r[0] === '💎' ? 7 : 3.5) : ((r[0] === r[1] || r[1] === r[2] || r[0] === r[2]) ? 1.15 : 0);
-    const win = Math.floor(bet * mult);
-    if (win > 0) { u.cash += win; u.stats.wins += 1; } else { u.stats.losses += 1; }
-    saveData();
-    return replyImageOnly(message, await renderSlotsBluePng(u, r, bet, win > 0 ? `GAIN : +${win.toLocaleString('fr-FR')} $` : `PERTE : -${bet.toLocaleString('fr-FR')} $`));
-}
-
-async function handleCoinflip(message, args) {
-    const u = getUser(message.author.id, message.author);
-    const side = (args[0] || '').toLowerCase();
-    const bet = parseAmount(args[1], u.cash);
-    if (!['pile', 'face'].includes(side) || !bet || u.cash < bet) return replyContainer(message, { title: '🪙 Coinflip', body: 'Utilisation : `*coinflip <pile|face> <mise|all>`' });
-    u.cash -= bet; u.stats.wagered += bet;
-    const out = Math.random() < 0.5 ? 'pile' : 'face';
-    const won = out === side;
-    const payout = Math.floor(bet * 1.8);
-    if (won) { u.cash += payout; u.stats.wins += 1; } else { u.stats.losses += 1; }
-    saveData();
-    return replyImageOnly(message, await renderCoinflipBluePng(u, side, out, bet, won ? `GAGNÉ : +${payout.toLocaleString('fr-FR')} $` : `PERDU : -${bet.toLocaleString('fr-FR')} $`));
-}
-
-async function handleDice(message, args) {
-    const u = getUser(message.author.id, message.author);
-    const guess = parseInt(args[0], 10);
-    const bet = parseAmount(args[1], u.cash);
-    if (isNaN(guess) || guess < 1 || guess > 6 || !bet || u.cash < bet) return replyContainer(message, { title: '🎲 Dice', body: 'Utilisation : `*dice <1-6> <mise|all>`' });
-    u.cash -= bet; u.stats.wagered += bet;
-    const roll = randInt(1, 6);
-    const won = roll === guess;
-    const payout = Math.floor(bet * 3.6);
-    if (won) { u.cash += payout; u.stats.wins += 1; } else { u.stats.losses += 1; }
-    saveData();
-    return replyImageOnly(message, await renderDiceBluePng(u, roll, guess, bet, won ? `JACKPOT : +${payout.toLocaleString('fr-FR')} $` : `PERDU : -${bet.toLocaleString('fr-FR')} $`));
-}
-
-async function handleCrash(message, args) {
-    const u = getUser(message.author.id, message.author);
-    const bet = parseAmount(args[0], u.cash);
-    if (!bet || u.cash < bet) return replyContainer(message, { title: '🚀 Crash', body: 'Utilisation : `*crash <mise|all>`' });
-    u.cash -= bet; u.stats.wagered += bet;
-    const crashAt = Number((1 + Math.random() * 2.2).toFixed(2));
-    const targetMult = Number((1.1 + Math.random() * 1.5).toFixed(2));
-    const won = crashAt >= targetMult;
-    const pay = won ? Math.floor(bet * targetMult) : 0;
-    if (won) { u.cash += pay; u.stats.wins += 1; } else { u.stats.losses += 1; }
-    saveData();
-    return replyImageOnly(message, await renderCrashBluePng(u, crashAt, targetMult, bet, won ? `ENCAISSÉ : +${pay.toLocaleString('fr-FR')} $` : `CRASH : -${bet.toLocaleString('fr-FR')} $`));
-}
-
-client.on('interactionCreate', async interaction => {
-    if (interaction.isModalSubmit() && interaction.customId.startsWith('auction_modal_')) {
-        const msgId = interaction.customId.replace('auction_modal_', '');
-        const auc = activeAuctions.get(msgId);
-        if (!auc || auc.ended || Date.now() >= auc.endsAt) {
-            return interaction.reply({ content: 'Cette enchère est terminée.', flags: MessageFlags.Ephemer                flags: MessageFlags.Ephemeral
-            }).catch(() => {});
-        }
-        const rawVal = interaction.fields.getTextInputValue('bid_amount').trim();
-        const u = getUser(interaction.user.id, interaction.user);
-        const bid = parseAmount(rawVal, u.cash);
-        const minRequired = auc.highestBid + 1;
-        if (!bid || bid < minRequired) {
-            return interaction.reply({
-                content: `Offre invalide. Entre un montant supérieur à **${formatMoney(auc.highestBid)}** (minimum **${formatMoney(minRequired)}**).`,
-                flags: MessageFlags.Ephemeral
-            }).catch(() => {});
-        }
-        if (u.cash < bid) {
-            return interaction.reply({
-                content: `Tu n'as pas assez de cash (**${formatMoney(u.cash)}** disponibles).`,
-                flags: MessageFlags.Ephemeral
-            }).catch(() => {});
-        }
-
-        auc.highestBid = bid;
-        auc.highestBidderId = interaction.user.id;
-        auc.highestBidderName = u.username;
-
-        await interaction.message.edit({
-            flags: MessageFlags.IsComponentsV2,
-            components: [buildAuctionContainer(auc), auctionButtonRow(false)]
-        }).catch(() => {});
-
-        return interaction.reply({
-            content: `Offre de **${formatMoney(bid)}** enregistrée sur **${auc.title}**.`,
-            flags: MessageFlags.Ephemeral
-        }).catch(() => {});
-    }
-
-    if (!interaction.isButton()) return;
-
-    if (interaction.customId === 'auction_bid') {
-        const auc = activeAuctions.get(interaction.message.id);
-        if (!auc || auc.ended || Date.now() >= auc.endsAt) {
-            return interaction.reply({ content: 'Cette enchère est terminée.', flags: MessageFlags.Ephemeral }).catch(() => {});
-        }
-        const modal = new ModalBuilder()
-            .setCustomId(`auction_modal_${interaction.message.id}`)
-            .setTitle(`Enchérir • ${auc.title.slice(0, 32)}`);
-        const input = new TextInputBuilder()
-            .setCustomId('bid_amount')
-            .setLabel(`Montant (actuel : ${auc.highestBid} $)`)
-            .setStyle(TextInputStyle.Short)
-            .setPlaceholder(`Ex: ${Math.max(50, auc.highestBid + 50)}`)
-            .setRequired(true);
-        modal.addComponents(new ActionRowBuilder().addComponents(input));
-        return interaction.showModal(modal).catch(() => {});
-    }
-
-    if (interaction.customId.startsWith('help_')) {
-        const tab = interaction.customId.replace('help_', '');
-        const sec = getHelpSection(tab);
-        const container = buildContainerV2({ title: sec.title, body: sec.body });
-        return interaction.update({ flags: MessageFlags.IsComponentsV2, components: [container, helpButtons(tab)] }).catch(() => {});
-    }
-
-    const duel = activeDuels.get(interaction.message.id);
-    if (duel) {
-        if (interaction.user.id !== duel.p2Id) return;
-        activeDuels.delete(interaction.message.id);
-        const p1 = getUser(duel.p1Id);
-        const p2 = getUser(duel.p2Id, interaction.user);
-        if (interaction.customId === 'duel_decline') {
-            return interaction.update({
-                flags: MessageFlags.IsComponentsV2,
-                components: [buildContainerV2({ title: '⚔️ Duel refusé', body: `**${p2.username}** a décliné le duel.` })]
-            }).catch(() => {});
-        }
-        if (p1.cash < duel.bet || p2.cash < duel.bet) {
-            return interaction.update({
-                flags: MessageFlags.IsComponentsV2,
-                components: [buildContainerV2({ title: '⚔️ Duel annulé', body: 'Solde insuffisant chez l\'un des joueurs.' })]
-            }).catch(() => {});
-        }
-        const p1Wins = Math.random() < 0.5;
-        const winAmt = Math.floor(duel.bet * 0.9);
-        if (p1Wins) { p1.cash += winAmt; p2.cash -= duel.bet; p1.stats.wins += 1; p2.stats.losses += 1; }
-        else { p2.cash += winAmt; p1.cash -= duel.bet; p2.stats.wins += 1; p1.stats.losses += 1; }
-        saveData();
-        const winner = p1Wins ? p1 : p2;
-        return interaction.update({
-            flags: MessageFlags.IsComponentsV2,
-            components: [buildContainerV2({ title: '⚔️ Résultat du duel', body: `Victoire de **${winner.username}** (+**${formatMoney(winAmt)}**) !` })]
-        }).catch(() => {});
-    }
-
-    const game = activeBlackjacks.get(interaction.message.id);
-    if (!game || interaction.user.id !== game.userId) return;
-    const u = getUser(game.userId, interaction.user);
-    let finished = false, status = 'EN COURS';
-    if (interaction.customId === 'bj_hit') {
-        game.pCards.push(drawCard());
-        const pv = handValue(game.pCards);
-        if (pv > 21) { finished = true; u.stats.losses += 1; status = `BUST (${pv}) -${game.bet} $`; }
-        else if (pv === 21) {
-            finished = true;
-            while (handValue(game.dCards) < 17) game.dCards.push(drawCard());
-            const dv = handValue(game.dCards);
-            if (dv === 21) { u.cash += game.bet; status = 'ÉGALITÉ 21'; }
-            else { const pay = Math.floor(game.bet * 1.8); u.cash += pay; u.stats.wins += 1; status = `21 WIN +${pay} $`; }
-        }
-    } else if (interaction.customId === 'bj_stand') {
-        finished = true;
-        while (handValue(game.dCards) < 17) game.dCards.push(drawCard());
-        const pv = handValue(game.pCards), dv = handValue(game.dCards);
-        if (dv > 21 || pv > dv) { const pay = Math.floor(game.bet * 1.8); u.cash += pay; u.stats.wins += 1; status = `WIN ${pv} VS ${dv} +${pay} $`; }
-        else if (pv === dv) { u.cash += game.bet; status = `ÉGALITÉ ${pv} VS ${dv}`; }
-        else { u.stats.losses += 1; status = `PERDU ${pv} VS ${dv} -${game.bet} $`; }
-    }
-    saveData();
-    if (finished) activeBlackjacks.delete(interaction.message.id);
-    const att = await renderBlackjackBluePng(u, game.bet, game.pCards, handValue(game.pCards), finished ? game.dCards : [game.dCards[0], '??'], finished ? handValue(game.dCards) : '?', status);
-    await interaction.update({ files: [att], components: finished ? [] : interaction.message.components }).catch(() => {});
-});
-client.on('messageCreate', async message => {
-    if (!message.author || message.author.bot || !message.guild || !message.content.startsWith(PREFIX)) return;
-    const args = message.content.slice(PREFIX.length).trim().split(/ +/);
-    const cmd = (args.shift() || '').toLowerCase();
-
-    if (cmd === 'setcasino' || cmd === 'casinochannel') {
-        if (!isSuperOwner(message.author)) {
-            return replyContainer(message, { title: '⛔ Accès refusé', body: 'Réservé au Super Owner.' });
-        }
-        const sub = (args[0] || '').toLowerCase();
-        if (sub === 'off' || sub === 'reset' || sub === 'clear') {
-            setGuildCasinoCategory(message.guild.id, null);
-            return replyContainer(message, { title: '🔓 Restriction désactivée', body: 'Kyuro Casino fonctionne dans tous les salons du serveur.' });
-        }
-        const categoryId = await resolveCategoryIdFromInput(message, args[0]);
-        if (!categoryId) {
-            return replyContainer(message, { title: '❌ Catégorie introuvable', body: 'Indique un ID de catégorie (`*setcasino <ID>`) ou lance la commande depuis un salon de la catégorie.' });
-        }
-        const catChannel = await message.guild.channels.fetch(categoryId).catch(() => null);
-        setGuildCasinoCategory(message.guild.id, categoryId);
-        return replyContainer(message, {
-            title: '🎰 Catégorie configurée',
-            body: `Kyuro Casino répond uniquement dans **${catChannel ? catChannel.name : categoryId}** et ses salons inclus.`
-        });
-    }
-
-    if (cmd === 'owner' || cmd === 'unowner') {
-        if (!isSuperOwner(message.author)) {
-            return replyContainer(message, { title: '⛔ Accès refusé', body: 'Seul le Super Owner peut gérer les owners.' });
-        }
-        const targetId = (message.mentions.users.first()?.id || args[0] || '').replace(/[<@!>]/g, '').trim();
-        if (!targetId) {
-            return replyContainer(message, { title: '👑 Owners', body: `Utilisation : \`*${cmd} <id>\`` });
-        }
-        if (!Array.isArray(db.owners)) db.owners = [];
-        if (cmd === 'owner') {
-            if (!db.owners.includes(targetId)) {
-                db.owners.push(targetId);
-                saveData();
-            }
-            return replyContainer(message, { title: '👑 Owner ajouté', body: `L'utilisateur **${targetId}** est désormais Owner.` });
-        } else {
-            db.owners = db.owners.filter((id) => id !== targetId);
-            saveData();
-            return replyContainer(message, { title: '👑 Owner retiré', body: `L'utilisateur **${targetId}** n'est plus Owner.` });
-        }
-    }
-
-    if (!isAllowedCasinoChannel(message)) return;
-    getUser(message.author.id, message.author);
-
-    if (cmd === 'enchère' || cmd === 'enchere') {
-        return handleAuctionCreate(message, args);
-    }
-    if (cmd === 'reseteconomy') {
-        if (!isBotOwner(message.author)) return replyContainer(message, { title: '⛔ Accès refusé', body: 'Réservé aux Owners.' });
-        db = { users: {}, cryptos: JSON.parse(JSON.stringify(DEFAULT_CRYPTOS)), casinoCategories: db.casinoCategories || {}, owners: db.owners || [], lotteryPot: 2500 };
-        saveData();
-        return replyContainer(message, { title: '♻️ Reset OK', body: 'Économie réinitialisée à **0 $**.' });
-    }
-    if (cmd === 'setmoney') {
-        if (!isBotOwner(message.author)) return replyContainer(message, { title: '⛔ Accès refusé', body: 'Réservé aux Owners.' });
-        const target = message.mentions.users.first();
-        const amt = parseInt(args[1], 10);
-        if (!target || isNaN(amt) || amt < 0) return replyContainer(message, { title: '💰 Setmoney', body: 'Utilisation : `*setmoney <@membre> <montant>`' });
-        const u = getUser(target.id, target);
-        u.cash = amt; saveData();
-        return replyContainer(message, { title: '💰 Setmoney', body: `Cash de **${u.username}** : **${formatMoney(amt)}**.` });
-    }
-    if (cmd === 'pay') {
-        const s = getUser(message.author.id, message.author);
-        const t = message.mentions.users.first();
-        const amt = parseAmount(args[1], s.cash);
-        if (!t || t.bot || t.id === message.author.id || !amt || s.cash < amt) return replyContainer(message, { title: '💸 Pay', body: 'Utilisation : `*pay <@membre> <montant|all>`' });
-        const r = getUser(t.id, t);
-        s.cash -= amt; r.cash += amt; saveData();
-        return replyContainer(message, { title: '💸 Pay', body: `Envoyé **${formatMoney(amt)}** à **${r.username}**.` });
-    }
-    if (cmd === 'help') {
-        const sec = getHelpSection('all');
-        return replyContainer(message, { title: sec.title, body: sec.body, components: [helpButtons('all')] });
-    }
-
-    if (cmd === 'balance' || cmd === 'bal') return handleBalance(message);
-    if (cmd === 'deposit' || cmd === 'dep') return handleDeposit(message, args);
-    if (cmd === 'withdraw' || cmd === 'with') return handleWithdraw(message, args);
-    if (cmd === 'work') return handleWork(message);
-    if (cmd === 'daily') return handleDaily(message);
-    if (cmd === 'crime') return handleCrime(message);
-    if (cmd === 'mine') return handleMine(message);
-    if (cmd === 'fish') return handleFish(message);
-    if (cmd === 'gift') return handleGift(message, args);
-    if (cmd === 'rob') return handleRob(message);
-    if (cmd === 'monopoly' || cmd === 'immo' || cmd === 'company') return handleMonopoly(message, args);
-    if (cmd === 'crypto' || cmd === 'bourse') return handleCrypto(message, args);
-    if (cmd === 'hack') return handleHack(message);
-    if (cmd === 'heist') return handleHeist(message);
-    if (cmd === 'scratch') return handleScratch(message, args);
-    if (cmd === 'spin') return handleSpin(message, args);
-    if (cmd === 'lottery' || cmd === 'loto') return handleLottery(message, args);
-    if (cmd === 'duel') return handleDuel(message, args);
-    if (cmd === 'blackjack' || cmd === 'bj') return handleBlackjack(message, args);
-    if (cmd === 'roulette' || cmd === 'rl') return handleRoulette(message, args);
-    if (cmd === 'slots' || cmd === 'slot') return handleSlots(message, args);
-    if (cmd === 'coinflip' || cmd === 'cf') return handleCoinflip(message, args);
-    if (cmd === 'dice') return handleDice(message, args);
-    if (cmd === 'crash') return handleCrash(message, args);
-    if (cmd === 'leaderboard' || cmd === 'lb' || cmd === 'top') {
-        const entries = Object.entries(db.users)
-            .map(([id, u]) => ({ name: u.username || `Joueur_${id.slice(-4)}`, total: (u.cash || 0) + (u.bank || 0) }))
-            .sort((a, b) => b.total - a.total);
-        return replyImageOnly(message, await renderLeaderboardBluePng(entries));
-    }
-});
-
-setInterval(() => {
-    for (const sym of Object.keys(db.cryptos)) {
-        const c = db.cryptos[sym];
-        const delta = 1 + ((Math.random() - 0.5) * 0.09);
-        c.price = Math.max(10, Math.round(c.price * delta));
-        c.history = [...(c.history || []).slice(-11), c.price];
-    }
-    saveData();
-}, 600000);
-
-client.on('error', err => console.error('Erreur client Discord:', err.message));
-client.on('shardError', err => console.error('Erreur shard Discord:', err.message));
-client.on('shardDisconnect', (event, id) => {
-    console.warn(`Shard ${id} déconnecté (${event?.code}). Reconnexion...`);
-    if (process.env.DISCORD_TOKEN) client.login(process.env.DISCORD_TOKEN).catch(e => console.error('Reconnexion:', e.message));
-});
-
-setInterval(() => {
-    if (!client.isReady() && process.env.DISCORD_TOKEN) {
-        console.warn('Client Discord non prêt, tentative de reconnexion...');
-        client.login(process.env.DISCORD_TOKEN).catch(e => console.error('Relance:', e.message));
-    }
-}, 240000);
-
-process.on('unhandledRejection', reason => console.error('Unhandled Rejection:', reason));
-process.on('uncaughtException', err => console.error('Uncaught Exception:', err));
-
-client.once('clientReady', () => console.log(`Kyuro Casino v6.3 prêt : ${client.user.tag}`));
-client.login(process.env.DISCORD_TOKEN);
